@@ -1,0 +1,6 @@
+{
+  "kind": "a cluster inside the CI machine, where everything is rehearsed first",
+  "aws": "EKS",
+  "azure": "AKS",
+  "gcp": "GKE"
+}

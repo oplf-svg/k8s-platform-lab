@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: walker
+  namespace: shop
+---
+# One object, two verbs. What it may change in that object is kept small by policy.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: walker
+  namespace: shop
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [rollouts]
+    resourceNames: [standin]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: walker
+  namespace: shop
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: walker
+subjects:
+  - kind: ServiceAccount
+    name: walker
+    namespace: shop
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: walker
+  namespace: shop
+spec:
+  backoffLimit: 5
+  activeDeadlineSeconds: 10800
+  template:
+    metadata:
+      labels:
+        app: walker
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: walker
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        runAsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: walker
+          image: docker.io/library/python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+          args: [python3, -I, /code/walker.py]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 40Mi
+            limits:
+              memory: 96Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: code
+              mountPath: /code
+              readOnly: true
+            - name: list
+              mountPath: /walk
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: walker
+        - name: list
+          configMap:
+            name: releases

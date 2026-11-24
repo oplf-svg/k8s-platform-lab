@@ -1,0 +1,6 @@
+# The list is made by the scripts, because each cluster in CI tries a part of it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ../../walk

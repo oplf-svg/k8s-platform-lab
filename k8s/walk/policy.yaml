@@ -1,0 +1,72 @@
+# The right to change a Rollout would also be the right to change its image, to take the gate away or to mount what the
+# namespace hides. So Kubernetes itself looks at each change of the walker: only the two settings may differ, and only to what
+# is known. If this cannot be looked at, the change is refused.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: walker-changes-two-settings
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: ["*/*"]
+  matchConditions:
+    - name: only-the-walker
+      expression: request.userInfo.username == "system:serviceaccount:shop:walker"
+  variables:
+    - name: pod
+      expression: object.spec.template.spec
+    - name: podBefore
+      expression: oldObject.spec.template.spec
+  validations:
+    - message: it may only change the Rollout standin
+      expression: >-
+        request.operation == "UPDATE" && request.resource.group == "argoproj.io" && request.resource.resource == "rollouts"
+        && request.namespace == "shop" && request.name == "standin"
+        && (!has(request.subResource) || request.subResource == "")
+    - message: it may not change names, labels, notes or owners
+      expression: >-
+        ["labels", "annotations", "finalizers", "ownerReferences"].all(k,
+        (k in object.metadata) == (k in oldObject.metadata)
+        && (!(k in object.metadata) || object.metadata[k] == oldObject.metadata[k]))
+    - message: it may not change how the release is done
+      expression: >-
+        object.spec.all(k, k == "template" || (k in oldObject.spec && object.spec[k] == oldObject.spec[k]))
+        && oldObject.spec.all(k, k in object.spec)
+    - message: it may not change the labels of the pods
+      expression: >-
+        object.spec.template.all(k, k == "spec" || (k in oldObject.spec.template && object.spec.template[k] == oldObject.spec.template[k]))
+        && oldObject.spec.template.all(k, k in object.spec.template)
+    - message: it may not change the pod
+      expression: >-
+        variables.pod.all(k, k == "containers" || (k in variables.podBefore && variables.pod[k] == variables.podBefore[k]))
+        && variables.podBefore.all(k, k in variables.pod)
+    - message: it may not change the container
+      expression: >-
+        variables.pod.containers.size() == 1 && variables.podBefore.containers.size() == 1
+        && variables.pod.containers[0].all(k, k == "env" || (k in variables.podBefore.containers[0] && variables.pod.containers[0][k] == variables.podBefore.containers[0][k]))
+        && variables.podBefore.containers[0].all(k, k in variables.pod.containers[0])
+    - message: it may only change the two settings
+      expression: >-
+        variables.pod.containers[0].env.size() == 3 && variables.podBefore.containers[0].env.size() == 3
+        && variables.pod.containers[0].env[2] == variables.podBefore.containers[0].env[2]
+        && variables.pod.containers[0].env[0].name == "NOTE" && variables.pod.containers[0].env[1].name == "FAIL"
+        && variables.pod.containers[0].env[0].all(k, k in ["name", "value"])
+        && variables.pod.containers[0].env[1].all(k, k in ["name", "value"])
+    - message: it may only set what is known
+      expression: >-
+        variables.pod.containers[0].env[0].value in ["one", "good", "errors", "few", "drops", "refuses", "slow", "never-ready", "dies"]
+        && (!has(variables.pod.containers[0].env[1].value) || variables.pod.containers[0].env[1].value == ""
+        || (variables.pod.containers[0].env[1].value == variables.pod.containers[0].env[0].value
+        && !(variables.pod.containers[0].env[1].value in ["one", "good"])))
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: walker-changes-two-settings
+spec:
+  policyName: walker-changes-two-settings
+  validationActions: [Deny]

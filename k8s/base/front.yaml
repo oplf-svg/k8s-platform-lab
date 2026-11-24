@@ -1,0 +1,127 @@
+# One pod, and never two: the list is in it. Beside nginx a small program says in numbers what stands in the list.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: front
+  template:
+    metadata:
+      labels:
+        app: front
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:1.30.6@sha256:42c68eab6f7e22611786a9fe1d1c019e275c50185bd54b8f75dc2b9184322703
+          command: [nginx, -c, /etc/front/nginx.conf, -g, daemon off;]
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            # Not a request: it would be a line in the list.
+            tcpSocket:
+              port: http
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/front
+              readOnly: true
+            - name: list
+              mountPath: /var/log/front
+            - name: tmp
+              mountPath: /tmp
+        - name: tally
+          image: docker.io/library/python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+          command: [python3, -I, /etc/front/tally.py, /var/log/front/answers.jsonl, "9100"]
+          ports:
+            - name: numbers
+              containerPort: 9100
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: numbers
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 20m
+              memory: 40Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/front
+              readOnly: true
+            - name: list
+              mountPath: /var/log/front
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: front
+        - name: list
+          emptyDir:
+            sizeLimit: 200Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 50Mi
+---
+# A port of the machine and not a load balancer. A cloud would make the balancer outside of what our code knows, and it
+# would stay after the cluster is gone.
+apiVersion: v1
+kind: Service
+metadata:
+  name: front
+spec:
+  type: NodePort
+  selector:
+    app: front
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tally
+spec:
+  selector:
+    app: front
+  ports:
+    - name: numbers
+      port: 9100
+      targetPort: numbers

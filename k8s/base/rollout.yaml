@@ -1,0 +1,117 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: standin
+spec:
+  replicas: 10
+  revisionHistoryLimit: 2
+  minReadySeconds: 5
+  # Neither is the default. Without them a release that is never ready is only called late, after 600 seconds.
+  progressDeadlineSeconds: 120
+  progressDeadlineAbort: true
+  selector:
+    matchLabels:
+      app: standin
+  strategy:
+    canary:
+      maxSurge: 2
+      # One pod may be missing. Otherwise a bad pod stays until a good one is ready, and that needs room on a machine.
+      maxUnavailable: 1
+      steps:
+        - setWeight: 10
+        - analysis:
+            templates:
+              - templateName: gate
+            args:
+              - name: release
+                valueFrom:
+                  podTemplateHashValue: Latest
+        - setWeight: 50
+        - analysis:
+            templates:
+              - templateName: gate
+            args:
+              - name: release
+                valueFrom:
+                  podTemplateHashValue: Latest
+  template:
+    metadata:
+      labels:
+        app: standin
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # 5 seconds in which it still answers, and 15 to finish. The real program takes as long.
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: standin
+          image: docker.io/library/python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+          # Not "command": the real image has a fixed entry point, and only these words change.
+          args: [python3, -I, /app/app.py]
+          env:
+            # A release changes these two. The scripts count on this order, and tests/test_files.py looks at it.
+            - name: NOTE
+              value: one
+            - name: FAIL
+              value: ""
+            # What it answers with is given by the cluster and not by the release, so it cannot take another's name.
+            - name: RELEASE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['rollouts-pod-template-hash']
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 40Mi
+            limits:
+              memory: 96Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: app
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: app
+          configMap:
+            name: standin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: standin
+spec:
+  selector:
+    app: standin
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

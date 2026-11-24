@@ -1,0 +1,9 @@
+# The releases that are tried, one after the other. What stands here was merged, and nothing else is tried.
+good
+errors
+few
+drops
+refuses
+slow
+never-ready
+dies

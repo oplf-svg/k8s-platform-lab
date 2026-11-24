@@ -1,0 +1,14 @@
+# The only thing of ours that has a right in the cluster, and the policy that keeps the right small. No "namespace" here: it
+# would also be written into the policy, which belongs to no namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - walker.yaml
+  - policy.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: walker
+    namespace: shop
+    files:
+      - walker.py
