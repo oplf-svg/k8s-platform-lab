@@ -212,6 +212,8 @@ MISTAKES = [
     ("the network is open by default", NETWORK, "metadata:\n  name: nothing\n  namespace: shop\nspec:\n  podSelector: {}\n  policyTypes: [Ingress, Egress]", "metadata:\n  name: nothing\n  namespace: shop\nspec:\n  podSelector: {}\n  policyTypes: [Ingress]", "files"),
     ("a way out to any address", NETWORK, "    - to:\n        - podSelector:\n            matchLabels:\n              app: standin\n", "    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n", "files"),
     ("a way that is not tried", WALLS, '  "closed|the program to the internet|standin standin 1.1.1.1 443"\n', "", "files"),
+    ("only a part of the wall is put back", WALLS, "admin.conf apply --kustomize", "admin.conf --namespace shop apply --kustomize", "files"),
+    ("the list is not put back", WALLS, "put_back\nsleep 5\n", "sleep 5\n", "files"),
     ("a way is only tried with the wall", WALLS, "try_all without\n", "", "files"),
     ("an image that is not tried", WALLS, 'refused "not on the list" "another image that joins a pod that runs"', 'true "not on the list" "another image that joins a pod that runs"', "files"),
     ("a Kubernetes that nobody tested", PARTS, "kindest/node:v1.35.8", "kindest/node:v1.37.0", "files"),

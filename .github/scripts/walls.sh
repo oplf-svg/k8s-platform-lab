@@ -5,6 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 kube() { docker exec --interactive lab-control-plane kubectl --kubeconfig /etc/kubernetes/admin.conf --namespace shop "$@"; }
+# In no namespace, because the list and some of the connections are not in the one of the releases.
+put_back() { docker exec lab-control-plane kubectl --kubeconfig /etc/kubernetes/admin.conf apply --kustomize /repo/k8s/clouds/kind > /dev/null; }
 name_of() { kube get pod --selector "app=$1" --field-selector status.phase=Running --output name | head -1; }
 known="$(grep -m1 '/python:' k8s/walls/images.txt)"
 other="docker.io/library/other:1@sha256:$(printf '0%.0s' $(seq 64))"
@@ -58,7 +60,7 @@ refused "not on the list" "another image that joins a pod that runs" join_pod "$
 kube --namespace walls delete configmap known-images > /dev/null
 sleep 5
 refused "no params found" "an image from the list, when there is no list" start "$known"
-kube apply --kustomize /repo/k8s/clouds/kind > /dev/null
+put_back
 sleep 5
 started "an image from the list, when the list is there again" start "$known"
 
@@ -104,7 +106,7 @@ try_all() { # with the wall, or without it
 }
 kube delete networkpolicy --all > /dev/null
 try_all without
-kube apply --kustomize /repo/k8s/clouds/kind > /dev/null
+put_back
 try_all with
 
 echo "$tried things were tried at the two walls, and each was as it has to be."
