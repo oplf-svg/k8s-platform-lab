@@ -1,0 +1,84 @@
+# What a bad release is. The numbers are those of gate.json, and tests/test_files.py compares them.
+#
+# They come from the front, which is not part of the release, and only those of the new release are read. The front's numbers
+# of a release begin at 0 with its first answer, so nothing is guessed.
+#
+# Two looks. The early one stops what is clearly bad after 50 requests, so that few people see it. It says nothing when there
+# are fewer. The long one has to see at least 300 requests: "(... >= 300)" gives nothing at all when there were fewer, and
+# nothing is not one number, so it fails. A Prometheus that does not answer is an error, and three in a row end the release.
+#
+# "unanswered" is what no pod answered, for example because it died. Nobody can say which release it was, so it is compared
+# with all requests, and in doubt the new release goes back. Only 5xx: what the front refuses itself, for example because it
+# is too large, says nothing about a release.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: gate
+spec:
+  args:
+    - name: release
+  metrics:
+    - name: clearly-wrong
+      interval: 5s
+      count: 15
+      consecutiveErrorLimit: 2
+      successCondition: len(result) == 0 || result[0] <= 10
+      provider:
+        prometheus:
+          address: http://prometheus.shop.svc:9090
+          timeout: 5
+          query: |
+            100 * sum(
+              front_answers_total{release="{{args.release}}",feed="good",status!="202"}
+              or
+              front_answers_total{release="{{args.release}}",feed="forged",status!="401"}
+            ) / (sum(front_answers_total{release="{{args.release}}",feed=~"good|forged"}) >= 50)
+    - name: clearly-slow
+      interval: 5s
+      count: 15
+      consecutiveErrorLimit: 2
+      successCondition: len(result) == 0 || result[0] <= 10
+      provider:
+        prometheus:
+          address: http://prometheus.shop.svc:9090
+          timeout: 5
+          query: |
+            100 * sum(front_slow_answers_total{release="{{args.release}}",feed=~"good|forged"})
+            / (sum(front_answers_total{release="{{args.release}}",feed=~"good|forged"}) >= 50)
+    - name: unanswered
+      interval: 5s
+      count: 15
+      consecutiveErrorLimit: 2
+      successCondition: len(result) == 0 || result[0] <= 1
+      provider:
+        prometheus:
+          address: http://prometheus.shop.svc:9090
+          timeout: 5
+          query: |
+            100 * sum(increase(front_answers_total{release="front",feed=~"good|forged",status=~"5.."}[30s]))
+            / (sum(increase(front_answers_total{feed=~"good|forged"}[30s])) >= 250)
+    - name: wrong
+      initialDelay: 75s
+      consecutiveErrorLimit: 2
+      successCondition: len(result) == 1 && result[0] <= 2
+      provider:
+        prometheus:
+          address: http://prometheus.shop.svc:9090
+          timeout: 5
+          query: |
+            100 * sum(
+              front_answers_total{release="{{args.release}}",feed="good",status!="202"}
+              or
+              front_answers_total{release="{{args.release}}",feed="forged",status!="401"}
+            ) / (sum(front_answers_total{release="{{args.release}}",feed=~"good|forged"}) >= 300)
+    - name: slow
+      initialDelay: 75s
+      consecutiveErrorLimit: 2
+      successCondition: len(result) == 1 && result[0] <= 2
+      provider:
+        prometheus:
+          address: http://prometheus.shop.svc:9090
+          timeout: 5
+          query: |
+            100 * sum(front_slow_answers_total{release="{{args.release}}",feed=~"good|forged"})
+            / (sum(front_answers_total{release="{{args.release}}",feed=~"good|forged"}) >= 300)

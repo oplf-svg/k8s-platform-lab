@@ -1,0 +1,18 @@
+# The same on every cluster. No cloud is named here, and tests/test_files.py looks for that.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shop
+resources:
+  - namespace.yaml
+  - ../../standin
+  - ../../front
+  - gate.yaml
+  - rollout.yaml
+  - front.yaml
+  - prometheus.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: prometheus
+    files:
+      - prometheus.yml=prometheus-config.yml
