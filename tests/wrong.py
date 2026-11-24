@@ -138,6 +138,10 @@ MISTAKES = [
     ("the walker is not on a cloud", "k8s/clouds/azure/kustomization.yaml", "  - ../../walk\n", "", "files"),
     ("a cloud that nobody listed", "k8s/clouds/clouds.json", '  "gcp": "GKE"\n', '  "gcp": "GKE",\n  "oci": "OKE"\n', "files"),
     ("the base names a cloud", FRONT, "# One pod, and never two", "# On AKS one pod, and never two", "files"),
+    ("nobody is named", "NOTICE", "Copyright 2026 ", "Copyright ", "files"),
+    ("somebody else is named on top", "README.md", "Part of the public portfolio of ", "Part of the public portfolio of J. ", "files"),
+    ("more is claimed for the owner", "README.md", "Code, tests and texts are written by Claude", "Texts are written by Claude", "files"),
+    ("half a licence", "LICENSE", "   END OF TERMS AND CONDITIONS\n", "", "files"),
     ("other numbers than were decided", "gate.json", '"wrong_percent": 2', '"wrong_percent": 3', "files"),
 ]
 

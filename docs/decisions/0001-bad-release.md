@@ -40,6 +40,25 @@ Calculated with 4,000 made-up runs for each line: 1 pod of 10, 50 requests a sec
 | 1%, which may be acceptable | 4% | | | |
 | 0.5% | 0.1% | | | |
 
+## What one run measured
+
+The run of 24 November 2026, 22:11 UTC, of [pull request 1](https://github.com/oplf-svg/k8s-platform-lab/pull/1), one time each, 50
+requests a second. One run shows that it works. It does not show how often. GitHub keeps
+[its page](https://github.com/oplf-svg/k8s-platform-lab/actions/runs/45498599872) for 90 days, so until about 22 February 2027. The
+numbers stay here.
+
+| Release | Stopped by | Seconds in which it answered | Errors that clients saw | Calculated before |
+|---|---|---|---|---|
+| refuses every good request | the early look, at 92.9% wrong | 18.8 | 82 | 90, in 99 of 100 below 118 |
+| 20% errors | the early look, at 14.1% | 14.0 | 13 | 18, below 29 |
+| 7.4% errors | the long look, at 5.8% | 78.5 | 21 | 24, below 38 |
+| slow, 3 seconds | the early look, at 100% slow | 19.3 | 0 | |
+| ends 20% without an answer | unanswered, at 1.1% of all | 17.6 | 17 | |
+| never ready, or ends at once | not ready in 120 seconds | never | 0 | |
+| good | nothing, all five looks passed twice | stayed | 0 of 15,000 requests | |
+
+In all eight together, 73,000 requests, both lists agreed in every line, and no request left late.
+
 ## What it lets through
 
 - A release with 2% errors passes the first step every second time. The second step looks again, with half of the pods.

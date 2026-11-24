@@ -1,5 +1,6 @@
 """What has to stand in the files that only a cluster reads. Plain text is enough for it."""
 
+import hashlib
 import json
 import pathlib
 import re
@@ -17,6 +18,19 @@ def text(*parts):
 
 def yaml_files(place):
     return sorted(place.rglob("*.y*ml"))
+
+
+class Name(unittest.TestCase):
+    def test_whose_portfolio_this_is_and_who_wrote_it(self):
+        # Typed in NOTICE. Everywhere else it has to be the same.
+        name = re.search(r"^Copyright 2026 (.+)$", text("NOTICE"), re.MULTILINE)[1]
+        readme = text("README.md")
+        self.assertEqual(readme.splitlines()[2:4], [f"Part of the public portfolio of {name}.", "[The other parts](https://github.com/oplf-svg)."])
+        self.assertIn(f"\n## Who made this\n\nDirected and approved by {name}. Code, tests and texts are written by Claude, an AI agent that "
+                      "proposes its changes under an identity of its own.\n", readme)
+
+    def test_the_licence_is_the_whole_one(self):
+        self.assertEqual(hashlib.sha256(ROOT.joinpath("LICENSE").read_bytes()).hexdigest(), "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4")
 
 
 class Images(unittest.TestCase):

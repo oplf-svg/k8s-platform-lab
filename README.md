@@ -1,9 +1,14 @@
 # k8s-platform-lab
 
+Part of the public portfolio of Luis Orozco.
+[The other parts](https://github.com/oplf-svg).
+
 Rolls a bad release back by itself, and counts the errors that users saw until then. The company behind it is made up: no
 shop, customer or order in here is real.
 
-**Not proven yet.** It becomes a claim when a public run shows it.
+**Not proven yet.** So far it runs in a cluster inside of the CI machine, with a stand-in for the real program. What each
+run counted is on its page under [Actions](../../actions/workflows/ci.yml) for 90 days, and [what one run measured](docs/decisions/0001-bad-release.md)
+stands beside what was calculated before it.
 
 ## The claim
 
@@ -47,7 +52,10 @@ flowchart LR
 - **No load balancer that Kubernetes makes, and no disk,** because a cloud would make them outside of what the code knows, and
   they would stay.
 
-## Who made what
+## Who made this
 
-The numbers of the gate, the design, the code and the tests are by Claude. The owner of this repo chose the idea, decided to
-use those numbers, and approves every change.
+Directed and approved by Luis Orozco. Code, tests and texts are written by Claude, an AI agent that proposes its changes under an identity of its own.
+
+The numbers of the gate were proposed by Claude, and Luis Orozco decided to use them. To reach Luis Orozco:
+[GitHub](https://github.com/oplf-svg), [LinkedIn](https://www.linkedin.com/in/lforozcop/). Licence: [Apache 2.0](LICENSE), see
+[NOTICE](NOTICE).
