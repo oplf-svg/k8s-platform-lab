@@ -160,7 +160,7 @@ class Program(unittest.TestCase):
             path.write_text((line() + "\n") * 5)
             process = subprocess.Popen([sys.executable, str(ROOT / "front" / "tally.py"), str(path), "0"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
             try:
-                port = int(process.stdout.readline().rsplit(" ", 1)[1])
+                port, kinds = int(process.stdout.readline().rsplit(" ", 1)[1]), {}
 
                 def ask(where):
                     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
@@ -168,6 +168,7 @@ class Program(unittest.TestCase):
                     answer = connection.getresponse()
                     text = answer.read().decode()
                     connection.close()
+                    kinds[where] = answer.getheader("content-type")
                     return answer.status, text
 
                 def until(status):
@@ -183,6 +184,9 @@ class Program(unittest.TestCase):
                         break
                     time.sleep(0.01)
                 self.assertIn('front_answers_total{release="r1",feed="good",status="202"} 5', ask("/metrics")[1])
+                self.assertEqual(json.loads(ask("/marks")[1]), {})
+                # Without it Prometheus 3 reads nothing, and then every release is rolled back, also a good one.
+                self.assertEqual(kinds, {"/metrics": "text/plain; version=0.0.4; charset=utf-8", "/marks": "application/json"})
                 path.write_text("")
                 until(503)
                 self.assertEqual(ask("/health/live")[0], 503)

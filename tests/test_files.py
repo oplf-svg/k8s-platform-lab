@@ -102,6 +102,16 @@ class Gate(unittest.TestCase):
         for name, expected in names.items():
             self.assertEqual(self.gate.count(f'feed="{name}",status!="{expected}"'), 2)
 
+    def test_the_judge_knows_the_looks_of_the_gate(self):
+        looks = set(re.findall(r"^    - name: ([a-z-]+)$", self.gate.split("  metrics:\n")[1], re.MULTILINE))
+        self.assertEqual(set(re.findall(r'"([a-z-]+)"', re.search(r"^LOOKS = \{(.*)\}$", text("count", "judge.py"), re.MULTILINE)[1])), looks)
+
+    def test_the_cluster_waits_until_the_numbers_are_read(self):
+        script = text(".github", "scripts", "cluster.sh")
+        jobs = sorted(re.findall(r"job_name: ([a-z]+)", text("k8s", "base", "prometheus-config.yml")))
+        self.assertIn(f'= "{" ".join(jobs)}" ]; then exit 0; fi', script)
+        self.assertTrue(script.rstrip().endswith("exit 1"))
+
     def test_a_failure_condition_alone_would_let_nothing_pass_as_good(self):
         self.assertNotIn("failureCondition", self.gate)
         self.assertNotIn("vector(0)", self.gate)
@@ -265,9 +275,14 @@ class Front(unittest.TestCase):
         self.assertEqual(re.findall(r'"([a-z]+)":"\$', line), ["id", "path", "status", "upstream", "release", "pod", "seconds", "at"])
 
     def test_nothing_can_be_added_to_the_question(self):
-        status = self.conf.split("location = /status/release {")[1].split("\n    }\n")[0]
-        self.assertIn("if ($is_args) {", status)
-        self.assertIn("api/v1/query?query=rollout_info;", status)
+        asked = re.findall(r"location = /status/([a-z]+) \{", self.conf)
+        self.assertEqual(asked, ["release", "gate", "up"])
+        for name, question in zip(asked, ("rollout_info", "analysis_run_metric_phase==1", "up")):
+            part = self.conf.split(f"location = /status/{name} {{")[1].split("\n    }\n")[0]
+            self.assertIn("if ($is_args) {\n        return 404;", part)
+            self.assertIn("limit_except GET {\n        deny all;", part)
+            self.assertIn(f"proxy_pass http://prometheus:9090/api/v1/query?query={question};", part)
+        self.assertEqual(self.conf.count("prometheus:9090"), 3)
 
     def test_the_tally_only_reads_the_list(self):
         self.assertIn("mountPath: /var/log/front\n              readOnly: true\n", text("k8s", "base", "front.yaml").split("- name: tally\n          image")[1])

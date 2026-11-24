@@ -114,15 +114,17 @@ def handler_for(tally, reading):
             pass
 
         def do_GET(self):
-            alive, body = reading(), b""
+            alive, body, kind = reading(), b"", "text/plain"
             if self.path == "/metrics":
-                body = tally.text().encode()
+                # Prometheus 3 reads nothing from an address that does not say what it gives.
+                body, kind = tally.text().encode(), "text/plain; version=0.0.4; charset=utf-8"
             elif self.path == "/marks":
-                body = tally.runs().encode()
+                body, kind = tally.runs().encode(), "application/json"
             elif self.path != "/health/live":
                 return self.send_error(404)
             # Old numbers would look like a release that nobody asks, or worse like one that is still well.
             self.send_response(200 if alive else 503)
+            self.send_header("content-type", kind)
             self.send_header("content-length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)

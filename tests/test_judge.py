@@ -16,8 +16,26 @@ from app import ONE_IN, picked  # noqa: E402
 GATE = json.loads((ROOT / "gate.json").read_text())
 
 
-def said(*phases):
-    return {"status": "success", "data": {"resultType": "vector", "result": [{"metric": {"name": "standin", "phase": one}, "value": [0, "1"]} for one in phases]}}
+def answered(rows):
+    return {"status": "success", "data": {"resultType": "vector", "result": [{"metric": row, "value": [0, "1"]} for row in rows]}}
+
+
+def looked(stopped_by=None, runs=1, release="b2"):
+    """What the gate came to: each run of it looks five times, and one look may have stopped it."""
+    def phase(look):
+        if not stopped_by:
+            return "Successful"
+        # The long looks wait 75 seconds, so after an early stop they have not begun.
+        return "Failed" if look == stopped_by else "Pending" if look in ("wrong", "slow") else "Successful"
+    return [{"name": f"standin-{release}-2-{run}", "metric": look, "phase": phase(look)} for run in range(1, runs + 1) for look in sorted(judge.LOOKS)]
+
+
+GATES = {"good": looked(runs=2), "errors": looked("clearly-wrong"), "refuses": looked("clearly-wrong"), "slow": looked("clearly-slow"),
+         "drops": looked("unanswered"), "few": looked("wrong"), "never-ready": [], "dies": []}
+
+
+def said(*phases, gate=()):
+    return {"release": answered([{"name": "standin", "phase": one} for one in phases]), "gate": answered(gate)}
 
 
 def made(scenario, seconds=160, rate=50, first=20.0, last=45.0):
@@ -53,7 +71,9 @@ def verdict(scenario, change=lambda clients, front: None, status=None, gate=GATE
     clients, front = copy.deepcopy(made(scenario, **times))
     change(clients, front)
     counted = count.compare(clients, front, scenario)
-    return judge.judge(scenario, counted, clients, status or said("Completed" if scenario == "good" else "Abort"), gate)
+    if status is None:
+        status = said("Completed" if scenario == "good" else "Abort", gate=GATES[scenario])
+    return judge.judge(scenario, counted, clients, status, gate)
 
 
 class Right(unittest.TestCase):
@@ -63,9 +83,12 @@ class Right(unittest.TestCase):
                 self.assertEqual(verdict(scenario, **times), [])
 
     def test_what_the_controller_says_about_others_does_not_matter(self):
-        status = said("Abort")
-        status["data"]["result"].append({"metric": {"name": "other", "phase": "Completed"}, "value": [0, "1"]})
+        status = said("Abort", gate=[*looked("clearly-wrong"), *looked("slow", release="a1"), *looked("unanswered", release="b22")])
+        status["release"]["data"]["result"].append({"metric": {"name": "other", "phase": "Completed"}, "value": [0, "1"]})
         self.assertEqual(verdict("errors", status=status), [])
+
+    def test_a_release_with_few_errors_may_be_stopped_early_too(self):
+        self.assertEqual(verdict("few", last=60.0, status=said("Abort", gate=looked("clearly-wrong"))), [])
 
     def test_there_is_a_run_for_each_release_that_can_fail(self):
         from app import KINDS
@@ -85,7 +108,35 @@ class Wrong(unittest.TestCase):
         self.refused(verdict("errors", stays), "at the end the answers came from")
 
     def test_the_controller_says_that_a_bad_release_is_done(self):
-        self.refused(verdict("errors", status=said("Completed")), "and not Abort")
+        self.refused(verdict("errors", status=said("Completed", gate=GATES["errors"])), "and not Abort")
+
+    def test_it_went_back_because_nothing_was_read(self):
+        # This is what the first run on a cluster did, and four of five bad releases looked as they had to.
+        nothing = [{**row, "phase": "Failed" if row["metric"] in ("wrong", "slow") else "Successful"} for row in looked()]
+        for scenario, times in {"errors": {}, "few": {"last": 98.0}, "drops": {}, "refuses": {"last": 38.0}, "slow": {}}.items():
+            with self.subTest(scenario):
+                self.refused(verdict(scenario, status=said("Abort", gate=nothing), **times), "it was stopped by ['slow', 'wrong']")
+
+    def test_it_went_back_and_no_look_had_stopped_it(self):
+        for gate in ([], looked(), [{**row, "phase": "Pending"} for row in looked()]):
+            self.refused(verdict("errors", status=said("Abort", gate=gate)), "stopped by no look")
+
+    def test_it_was_stopped_by_another_look(self):
+        for scenario, look in (("errors", "unanswered"), ("slow", "clearly-wrong"), ("drops", "clearly-slow"), ("few", "slow")):
+            self.refused(verdict(scenario, status=said("Abort", gate=looked(look)), **({"last": 98.0} if scenario == "few" else {})), f"it was stopped by ['{look}']")
+
+    def test_the_look_could_not_be_taken(self):
+        gate = [{**row, "phase": "Error"} if row["metric"] == "slow" else row for row in looked("clearly-wrong")]
+        self.refused(verdict("errors", status=said("Abort", gate=gate)), "it was stopped by ['clearly-wrong', 'slow']")
+
+    def test_a_good_release_that_did_not_pass_every_look_twice(self):
+        for gate in ([], looked(), looked(runs=3), looked(runs=2)[1:], [{**row, "phase": "Running"} if row["metric"] == "slow" else row for row in looked(runs=2)]):
+            self.refused(verdict("good", last=110.0, status=said("Completed", gate=gate)), "did not pass every look twice")
+
+    def test_nobody_asked_the_controller(self):
+        for status in ({}, [], {"release": answered([])}, answered([]), None):
+            with self.subTest(status):
+                self.refused(judge.judge("errors", count.compare(*made("errors"), "errors"), made("errors")[0], status, GATE), "nobody asked")
 
     def test_the_controller_calls_it_late_only(self):
         self.refused(verdict("never-ready", status=said("Timeout")), "and not Abort")
@@ -93,10 +144,11 @@ class Wrong(unittest.TestCase):
     def test_the_controller_says_nothing(self):
         for status in ({"status": "error"}, {"status": "success", "data": {"result": []}}, []):
             with self.subTest(status):
-                self.refused(judge.judge("errors", count.compare(*made("errors"), "errors"), made("errors")[0], status, GATE), "nothing")
+                self.refused(verdict("errors", status={"release": status, "gate": answered(GATES["errors"])}), "says nothing")
+                self.refused(verdict("errors", status={**said("Abort"), "gate": status}), "stopped by no look")
 
     def test_the_controller_says_two_things(self):
-        self.refused(verdict("errors", status=said("Abort", "Completed")), "and not Abort")
+        self.refused(verdict("errors", status=said("Abort", "Completed", gate=GATES["errors"])), "and not Abort")
 
     def test_too_many_errors(self):
         self.refused(verdict("refuses", last=80.0), "are acceptable")

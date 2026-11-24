@@ -46,4 +46,4 @@ Calculated with 4,000 made-up runs for each line: 1 pod of 10, 50 requests a sec
 - Errors that come only after a while, or only for rare requests, pass.
 - A release that leaves fewer than about one in ten of its own requests unanswered is under the 1% of all, and passes that rule.
 - The looks trust the front. If it counts wrongly, only the clients can tell, so only the tests.
-- The numbers are calculated. Nothing has been measured yet, and they change here if a run shows something else.
+- The numbers are calculated. Runs are compared with them, and they change here if a run shows something else.

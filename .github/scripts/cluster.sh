@@ -38,5 +38,16 @@ printf '%s\n' "$@" | kube --namespace shop create configmap releases --from-file
 kube apply --kustomize /repo/k8s/clouds/kind
 for part in front prometheus; do kube --namespace shop rollout status "deployment/$part" --timeout 240s; done
 kube --namespace shop wait --for=jsonpath='{.status.phase}'=Healthy --timeout=240s rollout/standin
-curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors --max-time 60 http://127.0.0.1:30080/status/release
-echo
+
+# The gate decides by what Prometheus reads, and nothing read looks like a bad release. So first it has to read both.
+read_by_prometheus() {
+  curl --fail --silent --max-time 10 http://127.0.0.1:30080/status/up \
+    | jq --raw-output '[.data.result[] | select(.value[1] == "1") | .metric.job] | sort | join(" ")'
+}
+for _ in $(seq 45); do
+  if [ "$(read_by_prometheus || true)" = "front rollouts" ]; then exit 0; fi
+  sleep 2
+done
+echo "Prometheus does not read both: $(read_by_prometheus || true)"
+kube --namespace shop logs deployment/prometheus --tail 30
+exit 1

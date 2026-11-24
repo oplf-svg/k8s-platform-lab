@@ -52,6 +52,7 @@ same way, and a setting says how it fails.
 | 16 | A pod ends a connection without an answer | The front writes it down, the gate looks at it, and it is a seen error. The pod could not have counted it |
 | 17 | The program that counts at the front stops reading | Noticed: it answers 503, so nothing is measured, and that is not a success |
 | 18 | The job that changes the releases is taken over | It can try a known release, and nothing else: [what it cannot do](walker.md) |
+| 19 | A release goes back for another reason than it should, for example because nothing could be read | Noticed: the judge asks which look stopped it |
 
 ## What it does not cover
 

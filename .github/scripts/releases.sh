@@ -49,6 +49,8 @@ for name in "$@"; do
       get rollout,analysisrun,pod,job --output wide > "$out/$name.cluster.txt" || true
     docker exec lab-control-plane kubectl --kubeconfig /etc/kubernetes/admin.conf --namespace shop \
       logs job/walker --tail 50 >> "$out/$name.cluster.txt" 2>&1 || true
+    docker exec lab-control-plane kubectl --kubeconfig /etc/kubernetes/admin.conf --namespace shop \
+      get analysisrun --output json > "$out/$name.analysis.json" || true
   fi
   python3 count/judge.py --scenario "$name" --counted "$out/$name.counted.json" --clients "$out/$name.clients.jsonl" \
     --status "$out/$name.status.json" | tee -a "$out/summary.md" || failed+=("$name")

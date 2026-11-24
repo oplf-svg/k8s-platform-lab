@@ -66,18 +66,22 @@ def mark(front, run, which):
         connection.close()
 
 
-def controller(front):
-    """What the controller says, read just before the run is marked as over: the mark lets the next thing begin."""
+def asked(front, path):
     connection = http.client.HTTPConnection(*front, timeout=PATIENCE)
     try:
-        connection.request("GET", "/status/release", headers={"connection": "close"})
+        connection.request("GET", path, headers={"connection": "close"})
         answer = connection.getresponse()
-        text = answer.read().decode()
-        return text if answer.status == 200 else json.dumps({"status": f"the front answered {answer.status}"})
-    except (OSError, http.client.HTTPException) as problem:
-        return json.dumps({"status": f"no answer: {type(problem).__name__}"})
+        text = answer.read()
+        return json.loads(text) if answer.status == 200 else {"status": f"the front answered {answer.status}"}
+    except (OSError, ValueError, http.client.HTTPException) as problem:
+        return {"status": f"no answer: {type(problem).__name__}"}
     finally:
         connection.close()
+
+
+def controller(front):
+    """What the controller says, read just before the run is marked as over: the mark lets the next thing begin."""
+    return json.dumps({"release": asked(front, "/status/release"), "gate": asked(front, "/status/gate")})
 
 
 def run_all(front, run, total, rate, write, sender=send, workers=200):

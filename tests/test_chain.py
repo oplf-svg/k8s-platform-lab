@@ -42,8 +42,8 @@ class Front(http.server.ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 256
 
-    def __init__(self, path, old, new, until, phase):
-        self.list, self.old, self.new, self.until, self.phase = open(path, "a", encoding="utf-8"), old, new, until, phase
+    def __init__(self, path, old, new, until, phase, look):
+        self.list, self.old, self.new, self.until, self.phase, self.look = open(path, "a", encoding="utf-8"), old, new, until, phase, look
         self.lock, self.began, self.numbers = threading.Lock(), None, itertools.count()
         super().__init__(("127.0.0.1", 0), Handler)
 
@@ -72,7 +72,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # The walker sees the mark and goes back at once, so who asks afterwards hears of something else.
                 self.server.phase = "Progressing"
             return self.answer(204)
-        self.answer(200, json.dumps({"status": "success", "data": {"result": [{"metric": {"name": "standin", "phase": self.server.phase}, "value": [0, "1"]}]}}).encode())
+        rows = [{"name": "standin", "phase": self.server.phase}]
+        if self.path == "/status/gate":
+            rows = [{"name": "standin-b2-2-1", "metric": look, "phase": "Failed" if look == self.server.look else "Successful"} for look in judge.LOOKS]
+        self.answer(200, json.dumps({"status": "success", "data": {"result": [{"metric": row, "value": [0, "1"]} for row in rows]}}).encode())
 
     def do_POST(self):
         front, began = self.server, time.monotonic()
@@ -100,7 +103,7 @@ class Chain(unittest.TestCase):
         """Returns what was counted, what the judge says, and the numbers that Prometheus would read."""
         with tempfile.TemporaryDirectory() as folder, stand_in(RELEASE="a1") as old, stand_in(RELEASE="b2", FAIL=scenario) as new:
             place = pathlib.Path(folder)
-            front = Front(place / "answers.jsonl", old, new, until, phase)
+            front = Front(place / "answers.jsonl", old, new, until, phase, {"errors": "clearly-wrong", "drops": "unanswered"}[scenario])
             threading.Thread(target=front.serve_forever, daemon=True).start()
             try:
                 sent = clients.main(["--front", f"127.0.0.1:{front.server_address[1]}", "--run", scenario, "--seconds", str(seconds),

@@ -20,6 +20,8 @@ class Pretended:
         # When each run begins and is over, and which release the Rollout has.
         self.plan, self.note, self.now, self.said, self.changed = plan, note, 0.0, [], 0.0
         self.broken = False
+        # A release that the gate does not let through.
+        self.refused = None
 
     def sleep(self, seconds):
         self.now += seconds
@@ -32,7 +34,9 @@ class Pretended:
         return known
 
     def get(self):
-        phase = "Healthy" if self.now >= self.changed + 20 and not self.broken else "Progressing"
+        # While a bad release is there, it is never well.
+        well = self.note in ("one", "good") and self.note != self.refused and not self.broken and self.now >= self.changed + 20
+        phase = "Healthy" if well else "Degraded"
         return {"spec": {"template": {"spec": {"containers": [{"env": [{"name": "NOTE", "value": self.note}, {"name": "FAIL"}]}]}}}, "status": {"phase": phase}}
 
     def patch(self, body):
@@ -52,6 +56,11 @@ class Walk(unittest.TestCase):
     def test_a_good_release_stays_and_is_what_the_next_goes_back_to(self):
         said = Pretended({"good": (10, 300), "slow": (400, 500)}).walk("good", "slow")
         self.assertEqual(said, [(20, "good", ""), (410, "slow", "slow"), (500, "good", "")])
+
+    def test_a_good_release_that_was_not_let_through_is_not_kept(self):
+        there = Pretended({"good": (10, 300), "slow": (400, 500)})
+        there.refused = "good"
+        self.assertEqual(there.walk("good", "slow"), [(20, "good", ""), (300, "one", ""), (410, "slow", "slow"), (500, "one", "")])
 
     def test_the_order_of_the_list_decides_and_not_the_order_of_the_marks(self):
         said = Pretended({"few": (0, 1000), "errors": (500, 600)}).walk("errors", "few")

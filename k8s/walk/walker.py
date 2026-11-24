@@ -73,12 +73,15 @@ def walk(names, get, patch, marks, sleep=time.sleep, say=print):
                 say(f"release {name}")
                 patch(patch_for(name))
             wait(lambda: marks()[name] == "ended", f"{name} never ended", sleep)
-        if name == GOOD:
+        # Kept only if it is well. When the job was started again and something else runs, it was kept.
+        if name == GOOD and (note(get()) != name or phase(get()) == "Healthy"):
             stable = name
         elif note(get()) == name:
             say(f"back to {stable}")
             patch(patch_for(stable))
-        wait(lambda: phase(get()) == "Healthy", f"it never became well after {name}", sleep, patience=600.0)
+        # Not while a later release is there: then the job was started again, and that one is not well because it is tried.
+        if note(get()) == stable:
+            wait(lambda: phase(get()) == "Healthy", f"it never became well after {name}", sleep, patience=600.0)
     say("the list is at its end")
 
 

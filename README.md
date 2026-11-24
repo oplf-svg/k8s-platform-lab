@@ -3,7 +3,7 @@
 Rolls a bad release back by itself, and counts the errors that users saw until then. The company behind it is made up: no
 shop, customer or order in here is real.
 
-**No cluster has run yet.** Only the tests that need none have. It becomes a claim when a public run shows it.
+**Not proven yet.** It becomes a claim when a public run shows it.
 
 ## The claim
 
@@ -11,7 +11,7 @@ shop, customer or order in here is real.
 
 | | |
 |---|---|
-| [What it has to survive](docs/contract.md) | 18 things that can happen, what must be true afterwards, and what is not covered |
+| [What it has to survive](docs/contract.md) | 19 things that can happen, what must be true afterwards, and what is not covered |
 | [What a bad release is](docs/decisions/0001-bad-release.md) | The numbers, why they are these, and what they let through |
 | [The stand-in](standin/app.py) | Answers like the program of webhook-platform and fails on purpose, until that program has an image |
 | [The clients](clients/clients.py) | Send each request once, whatever the answers do, and write down what came back |

@@ -46,12 +46,26 @@ MISTAKES = [
     ("a release that nobody tried is judged", JUDGE, '    if reached < gate["at_least" if kind == GOOD else "early_at_least"]:', "    if False:", "judge"),
     ("a good release needs as few requests as a bad one", JUDGE, '"at_least" if kind == GOOD else "early_at_least"', '"early_at_least"', "judge"),
     ("the share does not matter", JUDGE, "    if not SHARE[0] <= share <= SHARE[1]:", "    if False:", "judge"),
-    ("a good release may have errors", JUDGE, "        if errors:\n            wrong.append(f\"clients saw {errors} errors: {counted['seen errors by answer']}\")\n        return wrong\n    if errors >", "        if False:\n            pass\n        return wrong\n    if errors >", "judge"),
+    ("a good release may have errors", JUDGE, "        if errors:\n            wrong.append(f\"clients saw {errors} errors: {counted['seen errors by answer']}\")\n        # Two runs", "        if False:\n            pass\n        # Two runs", "judge"),
     ("any number of errors is acceptable", JUDGE, '    if errors > gate["seen_errors"]:', "    if False:", "judge"),
     ("any time is acceptable", JUDGE, '    if took > gate["rolled_back_seconds"]:', "    if False:", "judge"),
     ("what is never ready may answer", JUDGE, "        if others:", "        if False:", "judge"),
     ("a bad release need not be bad", JUDGE, "return wrong + was_it_bad(scenario, sent, counted, new)", "return wrong", "judge"),
     ("clients may be late", JUDGE, 'if counted["late requests"] * 100 > counted["sent"] * LATE:', "if False:", "judge"),
+    ("why it went back does not matter", JUDGE, "    if not stopped or not stopped <= WHY[scenario]:", "    if False:", "judge"),
+    ("any look may have stopped it", JUDGE, "    if not stopped or not stopped <= WHY[scenario]:", "    if not stopped:", "judge"),
+    ("no look may have stopped it", JUDGE, "    if not stopped or not stopped <= WHY[scenario]:", "    if not stopped <= WHY[scenario]:", "judge"),
+    ("a look that could not be taken is nothing", JUDGE, 'if phase in ("Failed", "Error")}', 'if phase == "Failed"}', "judge"),
+    ("a good release need not pass the looks", JUDGE, "        if len(runs) != 2 or passed != {(run, look) for run in runs for look in LOOKS}:", "        if False:", "judge"),
+    ("a good release is looked at once", JUDGE, "        if len(runs) != 2 or passed !=", "        if passed !=", "judge"),
+    ("the looks of other releases count too", JUDGE, 'if row.get("name", "").startswith(f"{name}-{release}-"))', "if True)", "judge"),
+    ("the looks of a release that is called alike count too", JUDGE, 'startswith(f"{name}-{release}-")', 'startswith(f"{name}-{release}")', "judge"),
+    ("nobody has to ask the controller", JUDGE, '    if not isinstance(status, dict) or set(status) != {"release", "gate"}:\n        return ["nobody asked the controller"]\n', "", "judge"),
+    ("the tally does not say what it gives", TALLY, '            self.send_header("content-type", kind)\n', "", "tally"),
+    ("the gate cannot be asked", CONF, "query=analysis_run_metric_phase==1;", "query=analysis_run_metric_phase;", "files"),
+    ("something can be added to a question", CONF, "    location = /status/up {\n      if ($is_args) {\n        return 404;\n      }\n", "    location = /status/up {\n", "files"),
+    ("a good release that was not let through is kept", WALKER, '        if name == GOOD and (note(get()) != name or phase(get()) == "Healthy"):', "        if name == GOOD:", "walker"),
+    ("a good release is forgotten when the job starts again", WALKER, '(note(get()) != name or phase(get()) == "Healthy")', 'phase(get()) == "Healthy"', "walker"),
     ("two new releases are one", JUDGE, "    if len(others) != 1:", "    if not others:", "judge"),
     ("an answer of the controller is not compared by name", JUDGE, 'if one["metric"].get("name") == name)', "if True)", "judge"),
     ("no error is no number", TALLY, "                self.answers[release, feed, status] += 0", "                pass", "tally"),
@@ -105,7 +119,8 @@ MISTAKES = [
     ("the policy does not look at the gate", POLICY, "    - message: it may not change how the release is done\n", "    - message: it may do as it likes\n", "files"),
     ("the policy looks at somebody else", POLICY, "system:serviceaccount:shop:walker", "system:serviceaccount:shop:other", "files"),
     ("the old release is not seen alone first", WALKER, "                sleep(SETTLE)\n", "", "walker"),
-    ("the next release does not wait until all is well", WALKER, '        wait(lambda: phase(get()) == "Healthy"', '        wait(lambda: True', "walker"),
+    ("the next release does not wait until all is well", WALKER, '            wait(lambda: phase(get()) == "Healthy"', '            wait(lambda: True', "walker"),
+    ("a job that starts again waits for a release that is tried", WALKER, "        if note(get()) == stable:\n", "        if True:\n", "walker"),
     ("a job that starts again ends what runs", WALKER, "        elif note(get()) == name:", "        else:", "walker"),
     ("a job that starts again begins what runs", WALKER, "            if note(get()) != name:", "            if True:", "walker"),
     ("a good release does not stay", WALKER, "            stable = name\n", "            pass\n", "walker"),
@@ -138,6 +153,11 @@ def noticed(place, tests):
 
 def main(words):
     wanted = [one for one in MISTAKES if not words or words in one[0]]
+    # Tests that fail without a mistake would notice every mistake.
+    for name in sorted({name for one in wanted for name in one[4].split()}):
+        if noticed(ROOT, name):
+            print(f"test_{name}.py is not right without a mistake, so nothing can be said.")
+            return 1
     missed = []
     for what, where, old, new, tests in wanted:
         with tempfile.TemporaryDirectory() as folder:

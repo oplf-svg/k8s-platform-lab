@@ -22,6 +22,9 @@ SCENARIOS = {"good": GOOD, "errors": BAD, "few": BAD, "drops": BAD, "refuses": B
 SHARE = (4.0, 20.0)
 # How many requests in 100 may leave late. More, and the clients could not keep up, so the release got fewer than planned.
 LATE = 1
+# Which look has to stop it. A release that goes back because nothing could be measured was stopped by none of these.
+WHY = {"errors": {"clearly-wrong"}, "refuses": {"clearly-wrong"}, "slow": {"clearly-slow"}, "drops": {"unanswered"}, "few": {"clearly-wrong", "wrong"}}
+LOOKS = {"clearly-wrong", "clearly-slow", "unanswered", "wrong", "slow"}
 # How the controller's metric calls it. Its status field has other names for the same: Healthy and Degraded.
 DONE, ROLLED_BACK = "Completed", "Abort"
 
@@ -33,7 +36,17 @@ def phases(status, name="standin"):
     return sorted(one["metric"].get("phase", "") for one in status["data"]["result"] if one["metric"].get("name") == name)
 
 
+def looks(status, release, name="standin"):
+    """What each look at this release came to: one line for each run of the gate and each of its five looks."""
+    if not isinstance(status, dict) or status.get("status") != "success":
+        return []
+    rows = [one["metric"] for one in status["data"]["result"]]
+    return sorted((row.get("name", ""), row.get("metric", ""), row.get("phase", "")) for row in rows if row.get("name", "").startswith(f"{name}-{release}-"))
+
+
 def judge(scenario, counted, client_lines, status, gate):
+    if not isinstance(status, dict) or set(status) != {"release", "gate"}:
+        return ["nobody asked the controller"]
     if counted["problems"]:
         return ["the numbers cannot be believed", *counted["problems"][:20]]
     kind = SCENARIOS[scenario]
@@ -49,7 +62,7 @@ def judge(scenario, counted, client_lines, status, gate):
     errors, at_the_end = counted["seen errors"], counted["answers at the end"]
     if counted["late requests"] * 100 > counted["sent"] * LATE:
         wrong.append(f"the clients could not keep up: {counted['late requests']} of {counted['sent']} requests left late")
-    said, stays = phases(status), DONE if kind == GOOD else ROLLED_BACK
+    said, stays = phases(status["release"]), DONE if kind == GOOD else ROLLED_BACK
     if said != [stays]:
         wrong.append(f"the controller says {said or 'nothing'} and not {stays}")
 
@@ -74,10 +87,19 @@ def judge(scenario, counted, client_lines, status, gate):
         wrong.append(f"only {reached} requests reached the new release, so nothing was tried")
     if not SHARE[0] <= share <= SHARE[1]:
         wrong.append(f"the new release got {share}% of the requests in its first minute, which is not 1 pod of 10")
+    results = looks(status["gate"], new)
     if kind == GOOD:
         if errors:
             wrong.append(f"clients saw {errors} errors: {counted['seen errors by answer']}")
+        # Two runs of the gate, with five looks each.
+        runs = {run for run, _, _ in results}
+        passed = {(run, look) for run, look, phase in results if phase == "Successful"}
+        if len(runs) != 2 or passed != {(run, look) for run in runs for look in LOOKS}:
+            wrong.append(f"it did not pass every look twice: {results}")
         return wrong
+    stopped = {look for _, look, phase in results if phase in ("Failed", "Error")}
+    if not stopped or not stopped <= WHY[scenario]:
+        wrong.append(f"it was stopped by {sorted(stopped) or 'no look'} and not by {sorted(WHY[scenario])}: {results}")
     if errors > gate["seen_errors"]:
         wrong.append(f"clients saw {errors} errors, and {gate['seen_errors']} are acceptable")
     if took > gate["rolled_back_seconds"]:
