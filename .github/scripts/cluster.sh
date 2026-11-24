@@ -26,6 +26,8 @@ image=quay.io/argoproj/argo-rollouts
 sed "s|$image:$ROLLOUTS_VERSION|$image@$ROLLOUTS_DIGEST|" build/rollouts.yaml > build/rollouts-pinned.yaml
 [ "$(grep --count "image: $image@$ROLLOUTS_DIGEST" build/rollouts-pinned.yaml)" = 1 ] || { echo "The image of Argo Rollouts was not found once."; exit 1; }
 kube create namespace argo-rollouts
+# Only images from the list, here too: k8s/walls.
+kube label namespace argo-rollouts images=known
 # From the side of the server, because the definitions are too long for the note that kubectl would add to them.
 kube apply --server-side --namespace argo-rollouts --filename - < build/rollouts-pinned.yaml > build/rollouts.log
 kube --namespace argo-rollouts rollout status deployment/argo-rollouts --timeout 180s

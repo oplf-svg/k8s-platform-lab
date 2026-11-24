@@ -113,7 +113,8 @@ class Walk(unittest.TestCase):
 class List(unittest.TestCase):
     def test_the_merged_list_can_be_read_and_has_every_release(self):
         names = walker.read_list((ROOT / "k8s" / "list" / "releases.txt").read_text())
-        self.assertEqual(sorted(names), sorted(walker.KNOWN))
+        # Where nobody outside has a right, nothing can be taken away meanwhile.
+        self.assertEqual(sorted(names), sorted(set(walker.FAILS) - {"blind", "restarted", "interrupted"}))
 
     def test_what_is_not_a_list_of_known_releases_stops_it(self):
         for text in ("", "# only words\n", "errors\nother\n", "errors\nerrors\n", "one\n", "errors few\n"):
@@ -126,8 +127,8 @@ class Sent(unittest.TestCase):
         self.assertEqual(walker.patch_for("errors"), [
             {"op": "add", "path": "/spec/template/spec/containers/0/env/0/value", "value": "errors"},
             {"op": "add", "path": "/spec/template/spec/containers/0/env/1/value", "value": "errors"}])
-        for name in ("one", "good"):
-            self.assertEqual([one["value"] for one in walker.patch_for(name)], [name, ""])
+        for name, fails in {"one": "", "good": "", "unasked": "", "blind": "", "restarted": "errors", "interrupted": "errors", "few": "few"}.items():
+            self.assertEqual([one["value"] for one in walker.patch_for(name)], [name, fails])
 
     def test_it_asks_with_the_token_that_is_there_now(self):
         seen = []

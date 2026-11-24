@@ -22,6 +22,10 @@ spec:
         - analysis:
             templates:
               - templateName: gate
+            # All of them, and not only the last ten.
+            measurementRetention:
+              - metricName: .*
+                limit: 20
             args:
               - name: release
                 valueFrom:
@@ -30,6 +34,9 @@ spec:
         - analysis:
             templates:
               - templateName: gate
+            measurementRetention:
+              - metricName: .*
+                limit: 20
             args:
               - name: release
                 valueFrom:

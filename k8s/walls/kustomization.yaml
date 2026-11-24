@@ -1,0 +1,13 @@
+# Two walls: only images from a list, and only connections that are named. Neither is a program of its own.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - images.yaml
+  - network.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: known-images
+    namespace: walls
+    files:
+      - images.txt

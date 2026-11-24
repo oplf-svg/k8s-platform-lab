@@ -4,18 +4,25 @@ have to notice it.
   python3 tests/wrong.py [words of a mistake]
 """
 
+import os
 import pathlib
 import shutil
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 COUNT, JUDGE, TALLY, APP, CLIENTS = "count/count.py", "count/judge.py", "front/tally.py", "standin/app.py", "clients/clients.py"
 CONF, GATE, ROLLOUT, FRONT, PROMETHEUS = "front/nginx.conf", "k8s/base/gate.yaml", "k8s/base/rollout.yaml", "k8s/base/front.yaml", "k8s/base/prometheus.yaml"
+IMAGES, KNOWN, NETWORK, WALLS = "k8s/walls/images.yaml", "k8s/walls/images.txt", "k8s/walls/network.yaml", ".github/scripts/walls.sh"
 WALKER, RIGHT, POLICY = "k8s/walk/walker.py", "k8s/walk/walker.yaml", "k8s/walk/policy.yaml"
 LIST, RELEASES, CANNOT, PARTS = ".github/scripts/list.sh", ".github/scripts/releases.sh", ".github/scripts/cannot.sh", ".github/parts.env"
+MANY, BREAK, JOB = "count/many.py", ".github/scripts/break.sh", ".github/scripts/job.sh"
+RECORD, HOLD = "count/record.py", ".github/scripts/tests.sh"
 
+# These measure time, so nothing else may run beside them.
+ALONE = {"chain"}
 # What is wrong, where, what stands there, what stands there instead, and which tests have to notice it.
 MISTAKES = [
     ("a number that is missing is nothing", COUNT, "        if missing:", "        if False:", "count"),
@@ -43,18 +50,22 @@ MISTAKES = [
     ("numbers that cannot be believed are judged", JUDGE, '    if counted["problems"]:', "    if False:", "judge"),
     ("the controller is not asked", JUDGE, "    if said != [stays]:", "    if False:", "judge"),
     ("the end does not matter", JUDGE, "    if at_the_end != [new if kind == GOOD else old]:", "    if False:", "judge"),
-    ("a release that nobody tried is judged", JUDGE, '    if reached < gate["at_least" if kind == GOOD else "early_at_least"]:', "    if False:", "judge"),
+    ("a release that nobody tried is judged", JUDGE, '    if reached < gate["at_least" if kind == GOOD else "early_at_least"] and scenario != "unasked":', "    if False:", "judge"),
     ("a good release needs as few requests as a bad one", JUDGE, '"at_least" if kind == GOOD else "early_at_least"', '"early_at_least"', "judge"),
-    ("the share does not matter", JUDGE, "    if not SHARE[0] <= share <= SHARE[1]:", "    if False:", "judge"),
+    ("the share does not matter", JUDGE, '    if not SHARE[0] <= share <= SHARE[1] and scenario != "unasked":', "    if False:", "judge"),
     ("a good release may have errors", JUDGE, "        if errors:\n            wrong.append(f\"clients saw {errors} errors: {counted['seen errors by answer']}\")\n        # Two runs", "        if False:\n            pass\n        # Two runs", "judge"),
     ("any number of errors is acceptable", JUDGE, '    if errors > gate["seen_errors"]:', "    if False:", "judge"),
     ("any time is acceptable", JUDGE, '    if took > gate["rolled_back_seconds"]:', "    if False:", "judge"),
     ("what is never ready may answer", JUDGE, "        if others:", "        if False:", "judge"),
     ("a bad release need not be bad", JUDGE, "return wrong + was_it_bad(scenario, sent, counted, new)", "return wrong", "judge"),
     ("clients may be late", JUDGE, 'if counted["late requests"] * 100 > counted["sent"] * LATE:', "if False:", "judge"),
-    ("why it went back does not matter", JUDGE, "    if not stopped or not stopped <= WHY[scenario]:", "    if False:", "judge"),
-    ("any look may have stopped it", JUDGE, "    if not stopped or not stopped <= WHY[scenario]:", "    if not stopped:", "judge"),
-    ("no look may have stopped it", JUDGE, "    if not stopped or not stopped <= WHY[scenario]:", "    if not stopped <= WHY[scenario]:", "judge"),
+    ("why it went back does not matter", JUDGE, "    if not stopped & WHY[scenario] or not stopped <= WHY[scenario] | ALSO.get(scenario, set()):", "    if False:", "judge"),
+    ("any look may have stopped it", JUDGE, "    if not stopped & WHY[scenario] or not stopped <= WHY[scenario] | ALSO.get(scenario, set()):", "    if not stopped:", "judge"),
+    ("a look that may join may stop it alone", JUDGE, "    if not stopped & WHY[scenario] or", "    if not stopped or", "judge"),
+    ("a look may join anywhere", JUDGE, "ALSO.get(scenario, set())", '{"wrong"}', "judge"),
+    ("a look may join nowhere", JUDGE, "ALSO.get(scenario, set())", "set()", "judge"),
+    ("a controller that was never away was away", JUDGE, '    if scenario == "interrupted" and took < AWAY:', "    if False:", "judge"),
+    ("no look may have stopped it", JUDGE, "    if not stopped & WHY[scenario] or not stopped <=", "    if not stopped <=", "judge"),
     ("a look that could not be taken is nothing", JUDGE, 'if phase in ("Failed", "Error")}', 'if phase == "Failed"}', "judge"),
     ("a good release need not pass the looks", JUDGE, "        if len(runs) != 2 or passed != {(run, look) for run in runs for look in LOOKS}:", "        if False:", "judge"),
     ("a good release is looked at once", JUDGE, "        if len(runs) != 2 or passed !=", "        if passed !=", "judge"),
@@ -115,7 +126,10 @@ MISTAKES = [
     ("the walker may do it everywhere", RIGHT, "kind: Role\nmetadata", "kind: ClusterRole\nmetadata", "files"),
     ("the policy is open when it cannot look", POLICY, "failurePolicy: Fail", "failurePolicy: Ignore", "files"),
     ("the policy only writes it down", POLICY, "validationActions: [Deny]", "validationActions: [Audit]", "files"),
-    ("the policy knows a release that is none", POLICY, '"never-ready", "dies"]', '"never-ready", "dies", "other"]', "files"),
+    ("the policy knows a release that is none", POLICY, '"unasked:",', '"unasked:", "other:other",', "files"),
+    ("the policy lets a good release fail", POLICY, '"blind:",', '"blind:errors",', "files"),
+    ("the policy forgets a release", POLICY, '"restarted:errors", ', "", "files"),
+    ("the walker lets a good release fail", WALKER, '"blind": "",', '"blind": "errors",', "walker files"),
     ("the policy does not look at the gate", POLICY, "    - message: it may not change how the release is done\n", "    - message: it may do as it likes\n", "files"),
     ("the policy looks at somebody else", POLICY, "system:serviceaccount:shop:walker", "system:serviceaccount:shop:other", "files"),
     ("the old release is not seen alone first", WALKER, "                sleep(SETTLE)\n", "", "walker"),
@@ -130,10 +144,76 @@ MISTAKES = [
     ("an empty list is a list", WALKER, "or not names or", "or", "walker"),
     ("the token is read once", WALKER, "(account / 'token').read_text().strip()", "TOKEN.setdefault(0, (account / 'token').read_text().strip())", "walker"),
     ("a front that is away stops the walker", WALKER, "    except (OSError, ValueError):", "    except ZeroDivisionError:", "walker"),
-    ("one release is not tried", LIST, "dies drops", "drops", "files"),
-    ("what the walker cannot do is not tried", LIST, "cannot good errors", "good errors", "files"),
-    ("the clients are slower than the numbers say", RELEASES, "--rate 50 ", "--rate 5 ", "files"),
+    ("one release is not tried", LIST, '"dies drops"', '"drops"', "files"),
+    ("what the walker cannot do is not tried", LIST, '"cannot good errors"', '"good errors"', "files"),
+    ("two jobs have the same name", LIST, "run-$n $list", "run $list", "files"),
+    ("a repetition leaves something out", LIST, 'seq -w "$repeat"', 'seq -w 2 "$repeat"', "files"),
+    ("every pull request repeats everything", LIST, 'repeat="${1:-1}"', 'repeat="${1:-2}"', "files"),
+    ("a repetition is anything", LIST, "^[1-9][0-9]?$ ]]", "^[1-9] ]]", "files"),
+    ("the clients are slower than the numbers say", RELEASES, "  rate=50\n", "  rate=5\n", "files"),
+    ("every release is asked for by hardly anybody", RELEASES, 'if [ "$name" = unasked ]; then rate=1; fi', "rate=1", "files"),
+    ("something is taken away on every cluster", RELEASES, 'bash "$BREAK" "$name" & fi', 'bash .github/scripts/break.sh "$name" & fi', "files"),
+    ("nothing is taken away", JOB, "BREAK=.github/scripts/break.sh bash", "bash", "files"),
+    ("one thing is not taken away", BREAK, "  blind)\n", "  nothing)\n", "files"),
+    ("Prometheus comes back while the release is there", BREAK, '    has_to_be "the release" "$(phase)" Degraded\n    shop scale', "    shop scale", "break"),
+    ("the controller starts again while the release is there", BREAK, '    has_to_be "the release" "$(phase)" Degraded\n    who_leads', "    who_leads", "break"),
+    ("the same controller is another one", BREAK, ' && [ "$now" != "$1" ]; }', "; }", "break"),
+    ("nobody is somebody", BREAK, ' && [ -n "$now" ]', "", "break"),
+    ("a controller that is still there is away", BREAK, '    wait_for 30 "the controller is away" nobody\n', "", "break"),
+    ("the controller goes before the release is looked at", BREAK, '    wait_for 60 "the release is looked at" looked_at "$there"\n', "", "break"),
+    ("a release that was looked at before is looked at", BREAK, '[ "$(runs)" -gt "$1" ]', '[ "$(runs)" -ge "$1" ]', "break"),
+    ("the controller is away for a moment", BREAK, "    sleep 30\n", "    sleep 3\n", "break"),
+    ("nobody looks whether it took over", BREAK, '    wait_for 60 "another controller leads" another "$before"\n', "", "break"),
+    ("what never comes is not missed", BREAK, 'it was still not so: $what" >&2\n  exit 1', 'it was still not so: $what" >&2\n  return 0', "break"),
+    ("what is not as it has to be is fine", BREAK, """and has to be '$3'." >&2; exit 1; }""", """and has to be '$3'." >&2; }""", "break"),
+    ("a release that could not be measured need not go back for that", JUDGE, "        return wrong + was_it_unmeasured(scenario, errors, reached, results, gate)", "        return wrong", "judge"),
+    ("a release that was asked was not asked", JUDGE, '        if reached >= gate["at_least"]:', "        if False:", "judge"),
+    ("it does not matter why nobody could say so", JUDGE, '        if failed != {"wrong", "slow"} or broken:', "        if False:", "judge"),
+    ("a look that failed was a look that could not be taken", JUDGE, "    elif failed or not broken:", "    elif not broken and not failed:", "judge"),
+    ("errors of a release that could not be measured are nothing", JUDGE, 'wrong = [f"clients saw {errors} errors"] if errors else []', "wrong = []", "judge"),
+    ("what is missing among many is nothing", MANY, "        if there != how_many:", "        if False:", "many"),
+    ("one too many is nothing", MANY, "        if there != how_many:", "        if there < how_many:", "many"),
+    ("many are not judged again", MANY, 'wrong = judge(name, counted, clients, json.loads(status.read_text()), gate) if name in SCENARIOS else ["it is not known"]', "wrong = []", "many"),
+    ("the same run counts twice", MANY, "        if not wrong and print_of in seen:", "        if False:", "many"),
+    ("a list that is missing is nothing", MANY, '[f"{path.name} is missing" for path in files.values() if not path.exists()]', "[]", "many"),
+    ("it says to be surer than it is", MANY, "0.05 ** (1 / runs)", "0.5 ** (1 / runs)", "many"),
+    ("problems among many do not matter", MANY, "        return 1\n    print(f", "        return 0\n    print(f", "many"),
+    ("other files are the same files", MANY, "for job, its in said.items() if its != tree]", "for job, its in said.items() if False]", "many"),
+    ("a job that does not say its files has the same ones", MANY, 'if (place / "tree.txt").exists() else "nothing"', 'if (place / "tree.txt").exists() else tree', "many"),
+    ("a run that was started again is in a row", MANY, '    if env.get("GITHUB_RUN_ATTEMPT", "1") != "1":', "    if False:", "many"),
+    ("the site hears yes when something was wrong", MANY, 'in a row": not problems}', 'in a row": True}', "many"),
+    ("a row that was not tried was tried", MANY, 'was tried": len(table.get(name, [])) == how_many', 'was tried": True', "many"),
+    ("a row with another number", MANY, '"blind": 9,', '"blind": 8,', "many"),
+    ("an answer belongs to the second of its question", RECORD, 'line["at"] + line["seconds"] - zero', 'line["at"] - zero', "record"),
+    ("answers of nobody are left out", RECORD, '"nobody": [line for line in sent if not line.get("release")]', '"nobody": []', "record"),
+    ("only 5xx is wrong in the recording", RECORD, 'if line["status"] != line["expected"]]}', 'if (line["status"] or 0) >= 500]}', "record"),
+    ("the looks at another release are its own", RECORD, 'if not run["metadata"]["name"].startswith(f"{name}-{release}-"):', "if False:", "record"),
+    ("a look that read nothing was well", RECORD, '"well" if read_something else "nothing"', '"well"', "record"),
+    ("a look that could not be taken was well", RECORD, 'elif any(phase == "Error"', 'elif any(phase == "None"', "record"),
+    ("a bad look was well", RECORD, 'if phase == "Failed"]', 'if phase == "None"]', "record"),
+    ("what is no number is a number", RECORD, " and math.isfinite(found[0])", "", "record"),
+    ("a look that did not end has ended", RECORD, 'if not one.get("finishedAt"):', "if False:", "record"),
+    ("two new releases are one", RECORD, "    if len(new) > 1:", "    if False:", "record"),
+    ("a list that was cut off is drawn", RECORD, 'if unreadable or not any("end" in line for line in lines):', "if unreadable:", "record"),
+    ("a list that cannot be read is drawn", RECORD, 'if unreadable or not any("end" in line for line in lines):', 'if not any("end" in line for line in lines):', "record"),
+    ("a branch that has to wait need not wait", HOLD, "[ -e HOLD ] || [ -L HOLD ]", "false", "hold"),
+    ("a link that leads nowhere does not hold", HOLD, "[ -e HOLD ] || [ -L HOLD ]", "[ -e HOLD ]", "hold"),
+    ("it only says that it has to wait", HOLD, "; exit 1; fi", "; fi", "hold"),
     ("one thing that it cannot do is not tried", CANNOT, 'refused policy "a release without the gate"', '# policy "a release without the gate"', "files"),
+    ("images are only written down", IMAGES, "validationActions: [Deny]", "validationActions: [Audit]", "files"),
+    ("without a list everything starts", IMAGES, "parameterNotFoundAction: Deny", "parameterNotFoundAction: Allow", "files"),
+    ("when it cannot be looked at, everything starts", IMAGES, "failurePolicy: Fail", "failurePolicy: Ignore", "files"),
+    ("a container before the first is not looked at", IMAGES, "object.spec.initContainers.map(c, c.image)", "[]", "files"),
+    ("a container that joins is not looked at", IMAGES, "resources: [pods, pods/ephemeralcontainers]", "resources: [pods]", "files"),
+    ("a pod that runs is not looked at", IMAGES, "operations: [CREATE, UPDATE]", "operations: [CREATE]", "files"),
+    ("an image too many on the list", KNOWN, "quay.io/argoproj", "docker.io/library/other@sha256:00\nquay.io/argoproj", "files"),
+    ("an image is not on the list", KNOWN, "docker.io/prom/prometheus", "# docker.io/prom/prometheus", "files"),
+    ("one place has no label", "k8s/base/namespace.yaml", "    images: known\n", "", "files"),
+    ("the network is open by default", NETWORK, "metadata:\n  name: nothing\n  namespace: shop\nspec:\n  podSelector: {}\n  policyTypes: [Ingress, Egress]", "metadata:\n  name: nothing\n  namespace: shop\nspec:\n  podSelector: {}\n  policyTypes: [Ingress]", "files"),
+    ("a way out to any address", NETWORK, "    - to:\n        - podSelector:\n            matchLabels:\n              app: standin\n", "    - to:\n        - ipBlock:\n            cidr: 0.0.0.0/0\n", "files"),
+    ("a way that is not tried", WALLS, '  "closed|the program to the internet|standin standin 1.1.1.1 443"\n', "", "files"),
+    ("a way is only tried with the wall", WALLS, "try_all without\n", "", "files"),
+    ("an image that is not tried", WALLS, 'refused "not on the list" "another image that joins a pod that runs"', 'true "not on the list" "another image that joins a pod that runs"', "files"),
     ("a Kubernetes that nobody tested", PARTS, "kindest/node:v1.35.8", "kindest/node:v1.37.0", "files"),
     ("the walker is not on a cloud", "k8s/clouds/azure/kustomization.yaml", "  - ../../walk\n", "", "files"),
     ("a cloud that nobody listed", "k8s/clouds/clouds.json", '  "gcp": "GKE"\n', '  "gcp": "GKE",\n  "oci": "OKE"\n', "files"),
@@ -155,6 +235,43 @@ def noticed(place, tests):
     return None
 
 
+def make(mistake):
+    """Makes one mistake in a copy, or none, and returns what came of it."""
+    what, where, old, new, tests = mistake
+    with tempfile.TemporaryDirectory() as folder:
+        place = pathlib.Path(folder) / "copy"
+        shutil.copytree(ROOT, place, ignore=shutil.ignore_patterns(".git", "build", "__pycache__"))
+        if where:
+            text = (place / where).read_text()
+            if text.count(old) != 1:
+                return what, f"what it changes stands there {text.count(old)} times, and not once"
+            (place / where).write_text(text.replace(old, new))
+        by = noticed(place, tests)
+    if where:
+        return what, f"noticed by {by}" if by else "NOT NOTICED"
+    return what, f"NOT RIGHT, test_{by}.py failed without a mistake" if by else "right"
+
+
+def with_controls(wanted):
+    """The mistakes, and between them the same tests without a mistake. They have to be right while the others run: a test that
+    fails because the machine is busy would notice every mistake."""
+    names, mixed = sorted({name for one in wanted for name in one[4].split()}), []
+    for number, one in enumerate(wanted):
+        mixed.append(one)
+        if number % 5 == 4:
+            name = names[number // 5 % len(names)]
+            mixed.append((f"no mistake, for test_{name}.py", "", "", "", name))
+    return mixed
+
+
+def made(wanted):
+    """Some at once, but not as many as there are processors. Those that measure time come last, one after the other."""
+    together = [one for one in wanted if not ALONE & set(one[4].split())]
+    with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) * 3 // 4)) as pool:
+        yield from pool.map(make, with_controls(together))
+    yield from map(make, [one for one in wanted if one not in together])
+
+
 def main(words):
     wanted = [one for one in MISTAKES if not words or words in one[0]]
     # Tests that fail without a mistake would notice every mistake.
@@ -162,24 +279,17 @@ def main(words):
         if noticed(ROOT, name):
             print(f"test_{name}.py is not right without a mistake, so nothing can be said.")
             return 1
-    missed = []
-    for what, where, old, new, tests in wanted:
-        with tempfile.TemporaryDirectory() as folder:
-            place = pathlib.Path(folder) / "copy"
-            shutil.copytree(ROOT, place, ignore=shutil.ignore_patterns(".git", "build", "__pycache__"))
-            file = place / where
-            text = file.read_text()
-            if text.count(old) != 1:
-                print(f"{what}: what it changes stands there {text.count(old)} times, and not once")
-                missed.append(what)
-                continue
-            file.write_text(text.replace(old, new))
-            by = noticed(place, tests)
-        print(f"{'noticed by ' + by if by else 'NOT NOTICED'}: {what}", flush=True)
-        if not by:
+    missed, busy = [], []
+    for what, said in made(wanted):
+        print(f"{said}: {what}", flush=True)
+        if said.startswith("NOT RIGHT"):
+            busy.append(what)
+        elif said != "right" and not said.startswith("noticed by "):
             missed.append(what)
     print(f"{len(wanted) - len(missed)} of {len(wanted)} mistakes were noticed.")
-    return 1 if missed or not wanted else 0
+    if busy:
+        print(f"Some tests were not right without a mistake while others ran, so nothing can be said: {busy}")
+    return 1 if missed or busy or not wanted else 0
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@ kind: Namespace
 metadata:
   name: shop
   labels:
+    # Only images from the list: k8s/walls.
+    images: known
     # Kubernetes itself refuses pods that run as root, reach into the machine or get more rights.
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: v1.35
