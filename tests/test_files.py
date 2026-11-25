@@ -274,7 +274,7 @@ class Walls(unittest.TestCase):
         for kind, what in re.findall(r'^(started|refused "[a-z ]+") "([^"]+)"', script, re.MULTILINE):
             tried.append((what, "let through" if kind == "started" else "refused"))
         tried += [(what, wanted) for wanted, what in re.findall(r'^  "(closed|open)\|([^|]+)\|', script, re.MULTILINE)]
-        self.assertGreaterEqual(len(said), 21)
+        self.assertEqual(len(said), 23)
         self.assertEqual(said, tried)
         # Without the wall first, then with it.
         self.assertLess(script.index("try_all without\n"), script.index("try_all with\n"))
