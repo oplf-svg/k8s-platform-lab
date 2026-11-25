@@ -41,9 +41,10 @@ for name in "$@"; do
   echo "::group::$name"
   long="$(seconds "$name")"
   well
-  # A release that hardly anybody asks is not a release that is well.
+  # A release that hardly anybody asks is not a release that is well. Two requests a second, and not one: with one it can happen
+  # that none of them reaches it, and then nothing was tried.
   rate=50
-  if [ "$name" = unasked ]; then rate=1; fi
+  if [ "$name" = unasked ]; then rate=2; fi
   if [ -n "${BREAK:-}" ]; then bash "$BREAK" "$name" & fi
   python3 clients/clients.py --front "$front" --run "$name" --seconds "$long" --rate "$rate" \
     --out "$out/$name.clients.jsonl" --status "$out/$name.status.json"

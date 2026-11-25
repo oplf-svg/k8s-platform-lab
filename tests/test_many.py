@@ -16,7 +16,7 @@ import judge  # noqa: E402
 import many  # noqa: E402
 import test_judge  # noqa: E402
 
-TIMES = {"good": {"last": 110.0}, "few": {"last": 98.0}, "refuses": {"last": 38.0}, "interrupted": {"last": 80.0}, "unasked": {"rate": 1, "seconds": 170, "last": 98.0}}
+TIMES = {"good": {"last": 110.0}, "few": {"last": 98.0}, "refuses": {"last": 38.0}, "interrupted": {"last": 80.0}, "unasked": {"rate": 2, "seconds": 170, "last": 98.0}}
 
 
 TREE = "0123456789abcdef0123456789abcdef01234567"

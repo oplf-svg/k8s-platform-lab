@@ -83,7 +83,7 @@ def verdict(scenario, change=lambda clients, front: None, status=None, gate=GATE
 class Right(unittest.TestCase):
     def test_every_release_as_it_has_to_be(self):
         for scenario, times in {"good": {"last": 110.0}, "errors": {}, "few": {"last": 98.0}, "drops": {}, "refuses": {"last": 38.0}, "slow": {}, "never-ready": {}, "dies": {}, "restarted": {}, "interrupted": {"last": 80.0},
-                                "unasked": {"rate": 1, "seconds": 170, "last": 98.0}, "blind": {}}.items():
+                                "unasked": {"rate": 2, "seconds": 170, "last": 98.0}, "blind": {}}.items():
             with self.subTest(scenario):
                 self.assertEqual(verdict(scenario, **times), [])
 
@@ -145,7 +145,7 @@ class Wrong(unittest.TestCase):
 
     def test_a_release_that_nobody_asked_and_that_went_back_for_another_reason(self):
         for gate in ([], looked(), looked("clearly-wrong"), looked("wrong"), GATES["blind"]):
-            self.refused(verdict("unasked", rate=1, seconds=170, last=98.0, status=said("Abort", gate=gate)), "because too few asked")
+            self.refused(verdict("unasked", rate=2, seconds=170, last=98.0, status=said("Abort", gate=gate)), "because too few asked")
 
     def test_a_release_that_nobody_could_measure_and_that_was_measured(self):
         for gate in ([], looked(), looked("clearly-wrong"), GATES["unasked"], [*GATES["blind"][:-1], {**GATES["blind"][-1], "phase": "Failed"}]):

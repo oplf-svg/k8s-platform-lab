@@ -8,7 +8,8 @@ source .github/parts.env
 mkdir -p build
 
 get() { # address, fingerprint, file
-  curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 3 --max-time 180 --output "$3" "$1"
+  # Asked again when the server has trouble, because that says nothing about a release. What comes has to have its fingerprint.
+  curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 6 --max-time 180 --output "$3" "$1"
   echo "$2  $3" | sha256sum --check --strict --quiet
 }
 kube() { docker exec --interactive lab-control-plane kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"; }
