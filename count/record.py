@@ -83,7 +83,7 @@ def record(scenario, lines, analysis=None):
         "counts": {name: len(part) for name, part in whose.items()},
         "first": {name: round(min(had(line) for line in whose[name]), 1) for name in ("old", "new") if whose[name]},
         "last": {name: round(max(had(line) for line in whose[name]), 1) for name in ("old", "new") if whose[name]},
-        # From the first to the last answer, as the judge counts it.
+        # From the first to the last answer, as count.py counts it. The judge also counts what a release dropped after that.
         "took": {name: round(max(map(had, whose[name])) - min(map(had, whose[name])), 1) for name in ("old", "new") if whose[name]},
         "looks": looks(analysis, new[0], zero) if new else [],
         "a second": a_second,

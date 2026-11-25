@@ -194,8 +194,15 @@ class Release(unittest.TestCase):
 
     def test_the_clients_send_as_fast_as_the_numbers_say(self):
         script = text(".github", "scripts", "releases.sh")
-        self.assertIn(f"  rate={GATE['rate']}\n  if [ \"$name\" = unasked ]; then rate=1; fi\n", script)
+        self.assertRegex(script, rf'  rate={GATE["rate"]}\n  if \[ "\$name" = unasked \]; then rate=\d; fi\n')
         self.assertIn('--seconds "$long" --rate "$rate" ', script)
+
+    def test_the_release_that_hardly_anybody_asks_is_asked_by_somebody(self):
+        # Until the long look. One request of ten reaches the one new pod of ten, by chance.
+        asked = int(re.search(r"= unasked \]; then rate=(\d+); fi", text(".github", "scripts", "releases.sh"))[1]) * GATE["measure_seconds"]
+        # That none reaches it happens less than once in a million runs. With twice its share it still cannot be measured.
+        self.assertLess(0.9 ** asked, 1e-6)
+        self.assertLess(0.2 * asked, GATE["early_at_least"])
 
     def test_only_three_releases_take_a_part_away_and_only_in_ci(self):
         self.assertEqual(re.findall(r"^  ([a-z]+)\)$", text(".github", "scripts", "break.sh"), re.MULTILINE), ["blind", "restarted", "interrupted"])
@@ -259,6 +266,7 @@ class Walls(unittest.TestCase):
         self.assertEqual(said, tried)
         # Without the wall first, then with it.
         self.assertLess(script.index("try_all without\n"), script.index("try_all with\n"))
+        self.assertIn('else echo "open without the wall: $what"; fi', script)
         # What was taken away is put back, and not only where the releases are.
         self.assertEqual(len(re.findall(r"^put_back$", script, re.MULTILINE)), 2)
         self.assertNotRegex(script, r"kube apply|put_back\(\).*--namespace")
