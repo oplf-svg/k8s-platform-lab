@@ -7,6 +7,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 for part in ("standin", "count", "tests"):
@@ -35,11 +36,20 @@ def job(folder, name, number):
     return place
 
 
-class Many(unittest.TestCase):
+# All of them are made once. The other tests do with these, because making and judging all of them takes a second each time.
+SOME = ("good", "errors", "few", "slow", "unasked", "blind", "restarted", "interrupted")
+
+
+class Place(unittest.TestCase):
+    names = SOME
+
     def setUp(self):
         place = tempfile.TemporaryDirectory()
         self.addCleanup(place.cleanup)
         self.folder = pathlib.Path(place.name)
+        only = mock.patch.object(many, "SCENARIOS", {name: judge.SCENARIOS[name] for name in self.names})
+        only.start()
+        self.addCleanup(only.stop)
 
     def result(self, how_many, **env):
         with contextlib.redirect_stdout(io.StringIO()) as said:
@@ -50,20 +60,10 @@ class Many(unittest.TestCase):
         return [line for line in said.splitlines() if line.startswith("site: ")]
 
     def all_of(self, how_many):
-        return [job(self.folder, name, number) for number in range(how_many) for name in judge.SCENARIOS]
+        return [job(self.folder, name, number) for number in range(how_many) for name in self.names]
 
-    def test_everything_is_there_and_right(self):
-        self.all_of(2)
-        code, said = self.result(2)
-        self.assertEqual(code, 0, said)
-        self.assertIn("2 in a row, and none failed: it fails in less than 77.6% of the runs, 95% sure.", said)
-        self.assertRegex(said, r"\| errors \| 2 \| ([1-9]\d), \1, \1 \| 24\.7, 24\.7 \|")
-        self.assertIn("| dies | 2 | 0, 0, 0 | 0.0, 0.0 |", said)
-        # Word for word, because the site counts them.
-        self.assertEqual(self.for_the_site(said), [
-            'site: {"lane":"ci","what":"right 2 times in a row","got":"yes","ok":true}',
-            *(f'site: {{"lane":"ci","what":"row {row} was tried","got":"yes","ok":true}}' for row in (8, 9, 14, 15))])
 
+class Many(Place):
     def test_a_job_with_other_files(self):
         places = self.all_of(1)
         (places[3] / "tree.txt").write_text("f" * 40)
@@ -84,7 +84,7 @@ class Many(unittest.TestCase):
 
     def test_a_row_that_was_not_tried(self):
         places = self.all_of(1)
-        (places[list(judge.SCENARIOS).index("blind")] / "blind.status.json").unlink()
+        (places[self.names.index("blind")] / "blind.status.json").unlink()
         code, said = self.result(1)
         self.assertEqual(code, 1)
         self.assertEqual([json.loads(line[6:])["ok"] for line in self.for_the_site(said)], [False, True, False, True, True])
@@ -141,6 +141,23 @@ class Many(unittest.TestCase):
 
     def test_how_sure_it_is(self):
         self.assertEqual([many.sure(runs) for runs in (1, 3, 20, 59, 299)], [95.0, 63.2, 13.9, 5.0, 1.0])
+
+
+class All(Place):
+    """Once with every release that there is."""
+    names = tuple(judge.SCENARIOS)
+
+    def test_everything_is_there_and_right(self):
+        self.all_of(2)
+        code, said = self.result(2)
+        self.assertEqual(code, 0, said)
+        self.assertIn("2 in a row, and none failed: it fails in less than 77.6% of the runs, 95% sure.", said)
+        self.assertRegex(said, r"\| errors \| 2 \| ([1-9]\d), \1, \1 \| 24\.7, 24\.7 \|")
+        self.assertIn("| dies | 2 | 0, 0, 0 | 0.0, 0.0 |", said)
+        # Word for word, because the site counts them.
+        self.assertEqual(self.for_the_site(said), [
+            'site: {"lane":"ci","what":"right 2 times in a row","got":"yes","ok":true}',
+            *(f'site: {{"lane":"ci","what":"row {row} was tried","got":"yes","ok":true}}' for row in (8, 9, 14, 15))])
 
 
 if __name__ == "__main__":

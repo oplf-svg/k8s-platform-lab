@@ -56,6 +56,7 @@ MISTAKES = [
     ("a good release needs as few requests as a bad one", JUDGE, '"at_least" if kind == GOOD else "early_at_least"', '"early_at_least"', "judge"),
     ("the share does not matter", JUDGE, '    if not SHARE[0] <= share <= SHARE[1] and scenario != "unasked":', "    if False:", "judge"),
     ("a good release may have errors", JUDGE, "        if errors:\n            wrong.append(f\"clients saw {errors} errors: {counted['seen errors by answer']}\")\n        # Two runs", "        if False:\n            pass\n        # Two runs", "judge"),
+    ("what was dropped after the last answer is no time", JUDGE, "        took = round(max(signs) - min(signs), 1)\n", "", "judge"),
     ("any number of errors is acceptable", JUDGE, '    if errors > gate["seen_errors"]:', "    if False:", "judge"),
     ("any time is acceptable", JUDGE, '    if took > gate["rolled_back_seconds"]:', "    if False:", "judge"),
     ("what is never ready may answer", JUDGE, "        if others:", "        if False:", "judge"),
@@ -219,6 +220,7 @@ MISTAKES = [
     ("a way that is not tried", WALLS, '  "closed|the program to the internet|standin standin 1.1.1.1 443"\n', "", "files"),
     ("only a part of the wall is put back", WALLS, "admin.conf apply --kustomize", "admin.conf --namespace shop apply --kustomize", "files"),
     ("the list is not put back", WALLS, "put_back\nsleep 5\n", "sleep 5\n", "files"),
+    ("it is not said what was open before", WALLS, '; else echo "open without the wall: $what"; fi', "; fi", "files"),
     ("a way is only tried with the wall", WALLS, "try_all without\n", "", "files"),
     ("an image that is not tried", WALLS, 'refused "not on the list" "another image that joins a pod that runs"', 'true "not on the list" "another image that joins a pod that runs"', "files"),
     ("a Kubernetes that nobody tested", PARTS, "kindest/node:v1.35.8", "kindest/node:v1.37.0", "files"),
@@ -260,14 +262,16 @@ def make(mistake):
 
 
 def with_controls(wanted):
-    """The mistakes, and between them the same tests without a mistake. They have to be right while the others run: a test that
-    fails because the machine is busy would notice every mistake."""
-    names, mixed = sorted({name for one in wanted for name in one[4].split()}), []
-    for number, one in enumerate(wanted):
+    """The mistakes, and between them the same tests without a mistake. They have to be right while the others run: a test that is
+    broken, or that fails because the machine is busy, would notice every mistake. One more for every twenty."""
+    mixed, since = [], {}
+    for one in wanted:
+        for name in one[4].split():
+            if since.get(name, 20) >= 20:
+                since[name] = 0
+                mixed.append((f"no mistake, for test_{name}.py", "", "", "", name))
+            since[name] += 1
         mixed.append(one)
-        if number % 5 == 4:
-            name = names[number // 5 % len(names)]
-            mixed.append((f"no mistake, for test_{name}.py", "", "", "", name))
     return mixed
 
 
@@ -276,16 +280,11 @@ def made(wanted):
     together = [one for one in wanted if not ALONE & set(one[4].split())]
     with ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) * 3 // 4)) as pool:
         yield from pool.map(make, with_controls(together))
-    yield from map(make, [one for one in wanted if one not in together])
+    yield from map(make, with_controls([one for one in wanted if one not in together]))
 
 
 def main(words):
     wanted = [one for one in MISTAKES if not words or words in one[0]]
-    # Tests that fail without a mistake would notice every mistake.
-    for name in sorted({name for one in wanted for name in one[4].split()}):
-        if noticed(ROOT, name):
-            print(f"test_{name}.py is not right without a mistake, so nothing can be said.")
-            return 1
     missed, busy = [], []
     for what, said in made(wanted):
         print(f"{said}: {what}", flush=True)
@@ -295,7 +294,7 @@ def main(words):
             missed.append(what)
     print(f"{len(wanted) - len(missed)} of {len(wanted)} mistakes were noticed.")
     if busy:
-        print(f"Some tests were not right without a mistake while others ran, so nothing can be said: {busy}")
+        print(f"Some tests were not right without a mistake, so nothing can be said: {busy}")
     return 1 if missed or busy or not wanted else 0
 
 

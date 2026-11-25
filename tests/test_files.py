@@ -259,6 +259,7 @@ class Walls(unittest.TestCase):
         self.assertEqual(said, tried)
         # Without the wall first, then with it.
         self.assertLess(script.index("try_all without\n"), script.index("try_all with\n"))
+        self.assertIn('else echo "open without the wall: $what"; fi', script)
         # What was taken away is put back, and not only where the releases are.
         self.assertEqual(len(re.findall(r"^put_back$", script, re.MULTILINE)), 2)
         self.assertNotRegex(script, r"kube apply|put_back\(\).*--namespace")

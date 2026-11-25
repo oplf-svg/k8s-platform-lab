@@ -166,6 +166,13 @@ class Wrong(unittest.TestCase):
         for scenario in ("errors", "refuses", "slow"):
             self.refused(verdict(scenario, last=28.0), "so nothing was tried")
 
+    def test_a_release_that_drops_requests_after_its_last_answer(self):
+        def one_more(clients, front):
+            late = next(n for n, line in enumerate(clients) if line.get("feed") == "good" and line["at"] > 150 and judge.picked(line["id"], ONE_IN["drops"]))
+            clients[late].update(status=502, release="", pod="")
+            front[late + 1].update(status="502", upstream="502", release="", pod="")
+        self.refused(verdict("drops", one_more), "seconds, and 120 are acceptable")
+
     def test_the_controller_was_not_away(self):
         self.refused(verdict("interrupted"), "so it went back before the controller was away")
 

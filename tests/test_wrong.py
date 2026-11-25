@@ -30,8 +30,9 @@ class Proof(unittest.TestCase):
         code, said = self.result(lambda place, tests: tests.split()[0] if is_changed(place) else None)
         self.assertEqual(code, 0, said)
         self.assertIn(f"{len(wrong.MISTAKES)} of {len(wrong.MISTAKES)} mistakes were noticed.", said)
-        # Every file of tests is tried without a mistake too, while the others run, apart from those that run alone.
-        for name in {name for one in wrong.MISTAKES for name in one[4].split()} - wrong.ALONE:
+        # Every file of tests is tried without a mistake too, while the others run, and once more for every twenty mistakes.
+        self.assertEqual(said.count("right: no mistake, for test_files.py\n"), (sum("files" in one[4].split() for one in wrong.MISTAKES) + 19) // 20)
+        for name in {name for one in wrong.MISTAKES for name in one[4].split()}:
             self.assertIn(f"right: no mistake, for test_{name}.py\n", said)
 
     def test_a_mistake_that_nobody_notices(self):
@@ -40,16 +41,16 @@ class Proof(unittest.TestCase):
         self.assertIn("NOT NOTICED: ", said)
         self.assertIn("\n0 of ", said)
 
-    def test_a_machine_that_is_too_busy(self):
-        # Right when it is alone, and then everything fails.
-        code, said = self.result(lambda place, tests: None if place == ROOT else tests.split()[0], "walker")
+    def test_tests_that_are_not_right_or_a_machine_that_is_too_busy(self):
+        # Everything fails, with a mistake and without.
+        code, said = self.result(lambda place, tests: tests.split()[0], "walker")
         self.assertEqual(code, 1)
         self.assertIn("so nothing can be said: ['no mistake, for test_", said)
 
-    def test_tests_that_are_not_right_from_the_start(self):
-        code, said = self.result(lambda place, tests: tests.split()[0], "walker")
+    def test_also_what_runs_alone_is_tried_without_a_mistake(self):
+        code, said = self.result(lambda place, tests: tests, "the controller is asked after the mark")
         self.assertEqual(code, 1)
-        self.assertIn("is not right without a mistake, so nothing can be said.", said)
+        self.assertIn("so nothing can be said: ['no mistake, for test_chain.py']", said)
 
     def test_a_mistake_that_is_not_there(self):
         code, said = self.result(lambda place, tests: None, "no such mistake")

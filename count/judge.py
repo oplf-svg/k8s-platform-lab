@@ -14,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "standin"))
 sys.path.insert(0, str(ROOT / "count"))
 from app import ONE_IN, picked  # noqa: E402
-from count import read  # noqa: E402
+from count import moment, read  # noqa: E402
 
 GOOD, BAD, NEVER_ANSWERS, UNMEASURED = "good", "bad", "bad, and never answers", "good, and cannot be measured"
 SCENARIOS = {"good": GOOD, "errors": BAD, "few": BAD, "drops": BAD, "refuses": BAD, "slow": BAD, "never-ready": NEVER_ANSWERS, "dies": NEVER_ANSWERS,
@@ -91,6 +91,10 @@ def judge(scenario, counted, client_lines, status, gate):
     new = others[0]
     reached, share = counted["answers by release"][new], counted["share in the first minute"][new]
     took = counted["seconds from first to last answer"][new]
+    if scenario == "drops":
+        # What it dropped has no release on it, and may have come after its last answer.
+        signs = [moment(line) for line in sent if line.get("release") == new or line["status"] == 502]
+        took = round(max(signs) - min(signs), 1)
     if at_the_end != [new if kind == GOOD else old]:
         wrong.append(f"at the end the answers came from {at_the_end}")
     # The early look needs fewer requests, and a bad release should not get more than it takes.

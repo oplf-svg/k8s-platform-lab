@@ -101,7 +101,7 @@ try_all() { # with the wall, or without it
     # shellcheck disable=SC2086
     is="$(reach $words)"
     [ "$is" = "$wanted" ] || { echo "$1 the wall, $what is $is, and has to be $wanted"; exit 1; }
-    if [ "$1" = with ]; then tried=$((tried + 1)) && echo "$is: $what"; fi
+    if [ "$1" = with ]; then tried=$((tried + 1)) && echo "$is: $what"; else echo "open without the wall: $what"; fi
   done
 }
 kube delete networkpolicy --all > /dev/null
