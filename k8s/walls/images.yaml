@@ -1,0 +1,49 @@
+# The list has a place of its own, in which nothing runs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: walls
+---
+# Kubernetes itself looks at each pod. Without the list, or when it cannot look, nothing starts.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: only-known-images
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods, pods/ephemeralcontainers]
+  variables:
+    - name: known
+      expression: params.data["images.txt"].split("\n").filter(line, line != "" && !line.startsWith("#"))
+    - name: asked
+      expression: >-
+        object.spec.containers.map(c, c.image)
+        + (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : [])
+        + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, c.image) : [])
+  validations:
+    - expression: variables.asked.all(image, image in variables.known)
+      messageExpression: '"not on the list: " + variables.asked.filter(image, !(image in variables.known)).join(", ")'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: only-known-images
+spec:
+  policyName: only-known-images
+  validationActions: [Deny]
+  paramRef:
+    name: known-images
+    namespace: walls
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        images: known

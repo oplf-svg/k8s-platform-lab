@@ -4,6 +4,7 @@ import hashlib
 import json
 import pathlib
 import re
+import subprocess
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -51,7 +52,7 @@ class Images(unittest.TestCase):
 class Neutral(unittest.TestCase):
     def test_no_cloud_is_named_in_what_is_the_same_everywhere(self):
         names = r"\b(aws|eks|amazon|azure|aks|microsoft|gcp|gke|google|oci|oke|oracle|ecr|acr)\b"
-        for place in (K8S / "base", K8S / "walk", K8S / "list", ROOT / "standin", ROOT / "front", ROOT / "clients", ROOT / "count"):
+        for place in (K8S / "base", K8S / "walk", K8S / "walls", K8S / "list", ROOT / "standin", ROOT / "front", ROOT / "clients", ROOT / "count"):
             for path in place.rglob("*"):
                 if path.is_file() and path.suffix in (".yaml", ".yml", ".py", ".conf"):
                     self.assertIsNone(re.search(names, path.read_text(), re.IGNORECASE), path)
@@ -62,7 +63,9 @@ class Neutral(unittest.TestCase):
         for name in CLOUDS:
             parts = re.findall(r"- \.\./\.\./([a-z]+)", text("k8s", "clouds", name, "kustomization.yaml"))
             # In CI each cluster tries a part of the list, so the scripts make it there.
-            self.assertEqual(parts, ["base", "walk"] if name == "kind" else ["base", "walk", "list"], name)
+            # The walls need the way to the API of the cluster, which is different on each cloud. A cloud gets both together.
+            self.assertEqual(parts, ["base", "walk", "walls"] if name == "kind" else ["base", "walk", "list"], name)
+            self.assertEqual("walls" in parts, (K8S / "clouds" / name / "api.yaml").exists(), name)
 
     def test_nothing_that_a_cloud_makes_outside_of_our_code(self):
         # It would be in no state, and it would stay after the cluster is gone.
@@ -162,17 +165,42 @@ class Release(unittest.TestCase):
             self.assertIsNone(re.search(rf"--namespace shop[^\n]*\n? +{word} ", script), word)
 
     def test_every_release_is_tried_once(self):
-        lists = json.loads(re.search(r"^echo 'words=(\[.*\])'$", text(".github", "scripts", "list.sh"), re.MULTILINE)[1])
-        scenarios = re.search(r"^SCENARIOS = \{(.*)\}$", text("count", "judge.py"), re.MULTILINE)[1]
-        tried = [word for words in lists for word in words.split()]
-        # "cannot" is not a release. It tries what the walker must not be able to do, and once is enough.
-        self.assertEqual(tried.count("cannot"), 1)
-        self.assertEqual(sorted(word for word in tried if word != "cannot"), sorted(re.findall(r'"([a-z-]+)":', scenarios)))
+        def lists(*words, code=0):
+            done = subprocess.run(["bash", str(ROOT / ".github" / "scripts" / "list.sh"), *words], capture_output=True, text=True)
+            self.assertEqual(done.returncode, code, (words, done.stdout, done.stderr))
+            return json.loads(re.fullmatch(r"words=(\[.*\])\n", done.stdout)[1]) if code == 0 else done.stdout
+        scenarios = re.search(r"^SCENARIOS = \{(.*?)\}$", text("count", "judge.py"), re.MULTILINE | re.DOTALL)[1]
+        once = lists()
+        # A pull request asks for one of each. More is only asked for by hand.
+        self.assertIn('run: bash .github/scripts/list.sh >> "$GITHUB_OUTPUT"\n', WORKFLOW.read_text())
+        self.assertEqual(lists("1"), once)
+        for nonsense in ("0", "x", "-1", "100", "2; id", "2 3", "02"):
+            self.assertEqual(lists(nonsense, code=2), "", nonsense)
+        tried = [word for words in once for word in words.split()]
+        refused = {"cannot", "walls"}
+        for repeat in (2, 20):
+            many = lists(str(repeat))
+            # No two jobs with the same name, and each repetition has all of them.
+            self.assertEqual((len(set(many)), len(many)), (len(once) * repeat, len(once) * repeat))
+            numbers = {words.split(" ", 1)[0] for words in many}
+            self.assertEqual(numbers, {f"run-{n:0{len(str(repeat))}d}" for n in range(1, repeat + 1)})
+            for number in numbers:
+                self.assertEqual([words.split(" ", 1)[1] for words in many if words.startswith(f"{number} ")], once)
+        # These are no releases. They try what has to be refused, and once is enough.
+        self.assertEqual([tried.count(one) for one in sorted(refused)], [1, 1])
+        self.assertEqual(sorted(word for word in tried if word not in refused), sorted(re.findall(r'"([a-z-]+)":', scenarios)))
         known = set(re.findall(r"^    ([a-z| -]+)\) echo \d+ ;;$", text(".github", "scripts", "releases.sh"), re.MULTILINE))
-        self.assertEqual({word for words in known for word in words.split(" | ")}, set(tried) - {"cannot"})
+        self.assertEqual({word for words in known for word in words.split(" | ")}, set(tried) - refused)
 
     def test_the_clients_send_as_fast_as_the_numbers_say(self):
-        self.assertIn(f"--rate {GATE['rate']} ", text(".github", "scripts", "releases.sh"))
+        script = text(".github", "scripts", "releases.sh")
+        self.assertIn(f"  rate={GATE['rate']}\n  if [ \"$name\" = unasked ]; then rate=1; fi\n", script)
+        self.assertIn('--seconds "$long" --rate "$rate" ', script)
+
+    def test_only_three_releases_take_a_part_away_and_only_in_ci(self):
+        self.assertEqual(re.findall(r"^  ([a-z]+)\)$", text(".github", "scripts", "break.sh"), re.MULTILINE), ["blind", "restarted", "interrupted"])
+        self.assertIn("BREAK=.github/scripts/break.sh bash .github/scripts/releases.sh", text(".github", "scripts", "job.sh"))
+        self.assertNotIn("break.sh", text(".github", "scripts", "releases.sh"))
 
     def test_every_pod_gives_up_its_rights(self):
         for path in (K8S / "base" / name for name in ("rollout.yaml", "front.yaml", "prometheus.yaml")):
@@ -184,6 +212,56 @@ class Release(unittest.TestCase):
         for path in yaml_files(K8S / "base"):
             for word in ("kind: Role", "kind: ClusterRole", "kind: ServiceAccount", "serviceAccountName"):
                 self.assertNotIn(word, path.read_text(), path)
+
+
+class Walls(unittest.TestCase):
+    policy, network = text("k8s", "walls", "images.yaml"), text("k8s", "walls", "network.yaml")
+
+    def test_the_list_has_exactly_the_images_that_are_used(self):
+        known = {line for line in text("k8s", "walls", "images.txt").splitlines() if line and not line.startswith("#")}
+        used = {line.split("image: ")[1].strip() for path in yaml_files(K8S) for line in path.read_text().splitlines() if re.match(r"\s*(- )?image:", line)}
+        parts = dict(line.split("=", 1) for line in text(".github", "parts.env").splitlines() if line and not line.startswith("#"))
+        self.assertEqual(known, used | {f"quay.io/argoproj/argo-rollouts@{parts['ROLLOUTS_DIGEST']}"})
+
+    def test_nothing_starts_when_it_cannot_be_looked_at(self):
+        for word in ("failurePolicy: Fail\n", "parameterNotFoundAction: Deny\n", "validationActions: [Deny]\n", "resources: [pods, pods/ephemeralcontainers]\n",
+                     "operations: [CREATE, UPDATE]\n"):
+            self.assertEqual(self.policy.count(word), 1, word)
+        for kind in ("containers", "initContainers", "ephemeralContainers"):
+            self.assertIn(f"object.spec.{kind}.map(c, c.image)", self.policy)
+
+    def test_both_places_carry_the_label(self):
+        self.assertIn("    images: known\n", text("k8s", "base", "namespace.yaml"))
+        self.assertIn("kube label namespace argo-rollouts images=known\n", text(".github", "scripts", "cluster.sh"))
+        self.assertIn("      matchLabels:\n        images: known\n", self.policy)
+
+    def test_nothing_is_open_that_is_not_named(self):
+        parts = self.network.split("\n---\n")
+        closed = [part for part in parts if "  name: nothing\n" in part]
+        self.assertEqual([re.search(r"namespace: (.*)", part)[1] for part in closed], ["shop", "argo-rollouts"])
+        for part in closed:
+            self.assertRegex(part, r"  podSelector: \{\}\n  policyTypes: \[Ingress, Egress\](\n|$)")
+        # Only the way in comes from anywhere, and nothing goes out to an address.
+        self.assertNotIn("ipBlock", self.network)
+        self.assertEqual(len(re.findall(r"^    - ports:$", self.network, re.MULTILINE)), 1)
+        # Each rule names its ports, apart from the two that close everything.
+        rules = len(re.findall(r"^    - (?:from|to|ports):", self.network, re.MULTILINE))
+        self.assertEqual(len(re.findall(r"ports:$", self.network, re.MULTILINE)), rules)
+
+    def test_everything_that_is_said_is_tried(self):
+        said = re.findall(r"^\| (.+) \| (let through|refused|closed|open) \|$", text("docs", "walls.md"), re.MULTILINE)
+        script = text(".github", "scripts", "walls.sh")
+        tried = []
+        for kind, what in re.findall(r'^(started|refused "[a-z ]+") "([^"]+)"', script, re.MULTILINE):
+            tried.append((what, "let through" if kind == "started" else "refused"))
+        tried += [(what, wanted) for wanted, what in re.findall(r'^  "(closed|open)\|([^|]+)\|', script, re.MULTILINE)]
+        self.assertGreaterEqual(len(said), 21)
+        self.assertEqual(said, tried)
+        # Without the wall first, then with it.
+        self.assertLess(script.index("try_all without\n"), script.index("try_all with\n"))
+        # What was taken away is put back, and not only where the releases are.
+        self.assertEqual(len(re.findall(r"^put_back$", script, re.MULTILINE)), 2)
+        self.assertNotRegex(script, r"kube apply|put_back\(\).*--namespace")
 
 
 class Walker(unittest.TestCase):
@@ -212,10 +290,16 @@ class Walker(unittest.TestCase):
             "it may not change the container", "it may only change the two settings", "it may only set what is known"])
 
     def test_the_same_releases_are_known_everywhere(self):
-        scenarios = set(re.findall(r'"([a-z-]+)":', re.search(r"^SCENARIOS = \{(.*)\}$", text("count", "judge.py"), re.MULTILINE)[1]))
-        policy = re.search(r"env\[0\]\.value in \[(.*)\]", text("k8s", "walk", "policy.yaml"))[1]
-        self.assertEqual(set(re.findall(r'"([a-z-]+)"', policy)), scenarios | {"one"})
-        self.assertEqual(set(re.findall(r'"([a-z-]+)"', re.search(r"^KNOWN = \((.*)\)$", text("k8s", "walk", "walker.py"), re.MULTILINE)[1])), scenarios - {"good"})
+        scenarios = set(re.findall(r'"([a-z-]+)":', re.search(r"^SCENARIOS = \{(.*?)\}$", text("count", "judge.py"), re.MULTILINE | re.DOTALL)[1]))
+        walks = re.search(r"^FAILS = \{GOOD: \"\"(.*?)\}$", text("k8s", "walk", "walker.py"), re.MULTILINE | re.DOTALL)[1]
+        pairs = {("good", ""), *re.findall(r'"([a-z-]+)": "([a-z-]*)"', walks)}
+        self.assertEqual({name for name, _ in pairs}, scenarios)
+        # The same pairs in the policy, and the one that is there at first.
+        allowed = re.findall(r'"([a-z-]+):([a-z-]*)"', text("k8s", "walk", "policy.yaml").split("it may only set what is known")[1])
+        self.assertEqual(set(allowed), pairs | {("one", "")})
+        self.assertEqual(len(allowed), len(set(allowed)))
+        kinds = re.findall(r'"([a-z-]*)"', re.search(r"^KINDS = \((.*)\)$", text("standin", "app.py"), re.MULTILINE)[1])
+        self.assertEqual({fails for _, fails in pairs}, set(kinds))
 
     def test_everything_that_it_cannot_do_is_tried(self):
         said = re.findall(r"^\| (.+) \| (policy|right) \|$", text("docs", "walker.md"), re.MULTILINE)
@@ -233,6 +317,7 @@ class Walker(unittest.TestCase):
 
 
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+OFTEN = WORKFLOW.with_name("often.yml")
 
 
 @unittest.skipUnless(WORKFLOW.exists(), "the owner pushes the workflow first")
@@ -270,6 +355,51 @@ class Workflow(unittest.TestCase):
         waits = re.findall(r"needs: \[(.*)\]", self.text.split("\n  ci:\n")[1])[0].split(", ")
         self.assertEqual(sorted(waits), sorted(self.jobs[:-1]))
         self.assertIn(f"length == {len(waits)}\n", self.text)
+
+
+@unittest.skipUnless(OFTEN.exists(), "The owner pushes it.")
+class Often(unittest.TestCase):
+    """The same clusters, several times, and then all of them judged together. Started by hand."""
+
+    def setUp(self):
+        self.text = OFTEN.read_text()
+        self.parts = dict(re.findall(r"^  ([a-z-]+):\n((?:    .*\n|\n)+)", self.text.split("\njobs:\n")[1], re.MULTILINE))
+
+    def test_it_is_started_by_hand_and_only_on_what_was_approved(self):
+        self.assertEqual(re.findall(r"^  ([a-z_]+):", self.text.split("\non:\n")[1].split("\npermissions:")[0], re.MULTILINE), ["workflow_dispatch"])
+        self.assertIn("    if: ${{ github.ref == 'refs/heads/main' }}\n", self.parts["list"])
+        self.assertIn("        type: choice\n", self.text)
+
+    def test_it_can_never_stand_in_for_the_required_check(self):
+        self.assertEqual(list(self.parts), ["list", "clusters", "together"])
+        self.assertNotIn("name: ci\n", self.text)
+
+    def test_a_cluster_is_the_same_as_in_a_pull_request(self):
+        def steps(part):
+            return part.split("    steps:\n")[1].strip()
+        there = WORKFLOW.read_text().split("\n  clusters:\n")[1].split("\n\n  ")[0]
+        self.assertEqual(steps(self.parts["clusters"]), steps(there))
+        for same in ("    name: cluster (${{ matrix.words }})\n", "      max-parallel: 5\n", "      fail-fast: false\n", "    timeout-minutes: 30\n"):
+            self.assertIn(same, self.parts["clusters"])
+            self.assertIn(same, there + "\n")
+
+    def test_what_somebody_chose_reaches_nothing_but_a_setting(self):
+        self.assertEqual(set(re.findall(r"^ *(\w+): \$\{\{ inputs\.times \}\}$", self.text, re.MULTILINE)), {"TIMES"})
+        self.assertEqual(self.text.count("inputs."), 2)
+        self.assertIn('run: bash .github/scripts/list.sh "$TIMES" >> "$GITHUB_OUTPUT"\n', self.parts["list"])
+        self.assertIn('run: bash .github/scripts/together.sh "$TIMES"\n', self.parts["together"])
+
+    def test_it_judges_also_when_something_was_red(self):
+        self.assertIn("    needs: [list, clusters]\n    if: ${{ !cancelled() && needs.list.result == 'success' }}\n", self.parts["together"])
+
+    def test_no_rights_and_only_actions_of_github_at_a_commit(self):
+        self.assertIn("\npermissions: {}\n", self.text)
+        self.assertEqual(set(re.findall(r"^      [a-z-]+: (read|write|none)$", self.text, re.MULTILINE)), {"read"})
+        self.assertEqual(set(re.findall(r"runs-on: (.*)", self.text)), {"ubuntu-24.04"})
+        for word in ("environment:", "container:", "services:", "id-token", "secrets.", "pull_request"):
+            self.assertNotIn(word, self.text)
+        for action in re.findall(r"uses: (.*)", self.text):
+            self.assertRegex(action, r"^actions/(checkout|upload-artifact|download-artifact)@[0-9a-f]{40} # v[\d.]+$")
 
 
 class Front(unittest.TestCase):

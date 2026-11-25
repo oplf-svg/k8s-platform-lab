@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Counts from outside while one release after the other is tried. It changes nothing: the walker in the cluster does, when a
 # run is marked as begun. So this is the same for a cluster in CI and for one in a cloud, and needs no right in either.
-# Words after it name the releases, in the order of the list. FRONT is where the front is.
+# Words after it name the releases, in the order of the list. FRONT is where the front is. BREAK may be a script that is told
+# the name of each release when it begins.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -28,6 +29,8 @@ seconds() {
     slow) echo 140 ;;
     few) echo 190 ;;
     never-ready | dies) echo 220 ;;
+    unasked | blind) echo 170 ;;
+    restarted | interrupted) echo 200 ;;
     *) echo "There is no release called $1." >&2 && return 1 ;;
   esac
 }
@@ -38,8 +41,14 @@ for name in "$@"; do
   echo "::group::$name"
   long="$(seconds "$name")"
   well
-  python3 clients/clients.py --front "$front" --run "$name" --seconds "$long" --rate 50 \
+  # A release that hardly anybody asks is not a release that is well.
+  rate=50
+  if [ "$name" = unasked ]; then rate=1; fi
+  if [ -n "${BREAK:-}" ]; then bash "$BREAK" "$name" & fi
+  python3 clients/clients.py --front "$front" --run "$name" --seconds "$long" --rate "$rate" \
     --out "$out/$name.clients.jsonl" --status "$out/$name.status.json"
+  # What the script did has to have worked.
+  if [ -n "${BREAK:-}" ]; then wait $!; fi
   curl --fail --silent --show-error --max-time 60 --output "$out/$name.front.jsonl" "http://$front/lists/answers"
   # What is wrong in the numbers is said by the judge.
   python3 count/count.py --clients "$out/$name.clients.jsonl" --front "$out/$name.front.jsonl" --run "$name" > "$out/$name.counted.json" || true
@@ -54,6 +63,10 @@ for name in "$@"; do
   fi
   python3 count/judge.py --scenario "$name" --counted "$out/$name.counted.json" --clients "$out/$name.clients.jsonl" \
     --status "$out/$name.status.json" | tee -a "$out/summary.md" || failed+=("$name")
+  # The same second by second, as small as possible, for a page that draws it. It decides nothing.
+  if python3 count/record.py --scenario "$name" --clients "$out/$name.clients.jsonl" --analysis "$out/$name.analysis.json" > "$out/$name.record.json"; then
+    echo "recording: $(cat "$out/$name.record.json")"
+  fi
   echo "::endgroup::"
 done
 [ ${#failed[@]} -eq 0 ] || { echo "Not as it has to be: ${failed[*]}"; exit 1; }

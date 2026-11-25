@@ -18,22 +18,23 @@ ACCOUNT = pathlib.Path("/var/run/secrets/kubernetes.io/serviceaccount")
 ROLLOUT = "https://kubernetes.default.svc/apis/argoproj.io/v1alpha1/namespaces/shop/rollouts/standin"
 MARKS = "http://tally:9100/marks"
 FIRST, GOOD = "one", "good"
-KNOWN = (GOOD, "errors", "few", "drops", "refuses", "slow", "never-ready", "dies")
+# Each release that may be tried, and how it fails. The policy knows the same pairs.
+FAILS = {GOOD: "", "errors": "errors", "few": "few", "drops": "drops", "refuses": "refuses", "slow": "slow", "never-ready": "never-ready", "dies": "dies",
+         "unasked": "", "blind": "", "restarted": "errors", "interrupted": "errors"}
 SETTLE = 10.0
 PATIENCE = 3600.0
 
 
 def read_list(text):
     names = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
-    strange = [name for name in names if name not in KNOWN]
+    strange = [name for name in names if name not in FAILS]
     if strange or not names or len(set(names)) != len(names):
         raise ValueError(f"the list is not a list of different known releases: {names}")
     return names
 
 
 def settings(name):
-    """A good release fails at nothing. Every other one fails as it is called."""
-    return name, "" if name in (FIRST, GOOD) else name
+    return name, FAILS.get(name, "")
 
 
 def patch_for(name):

@@ -31,7 +31,10 @@ def looked(stopped_by=None, runs=1, release="b2"):
 
 
 GATES = {"good": looked(runs=2), "errors": looked("clearly-wrong"), "refuses": looked("clearly-wrong"), "slow": looked("clearly-slow"),
-         "drops": looked("unanswered"), "few": looked("wrong"), "never-ready": [], "dies": []}
+         "drops": looked("unanswered"), "few": looked("wrong"), "never-ready": [], "dies": [], "restarted": looked("clearly-wrong"),
+         "interrupted": looked("clearly-wrong"),
+         "unasked": [{**row, "phase": "Failed" if row["metric"] in ("wrong", "slow") else "Successful"} for row in looked()],
+         "blind": [{**row, "phase": "Pending" if row["metric"] in ("wrong", "slow") else "Error"} for row in looked()]}
 
 
 def said(*phases, gate=()):
@@ -41,6 +44,7 @@ def said(*phases, gate=()):
 def made(scenario, seconds=160, rate=50, first=20.0, last=45.0):
     """The two lists of a run in which the new release got 1 request of 10 between two moments, and all or none after them."""
     clients, front = [], [{"id": "", "path": f"/mark/{scenario}/start", "status": "204", "upstream": ""}]
+    one_in = ONE_IN.get(judge.LIKE.get(scenario, scenario))
     for n in range(1, seconds * rate + 1):
         at, event, feed = (n - 1) / rate, f"{scenario}-{n:07d}", "forged" if n % 10 == 0 else "good"
         expected = 401 if feed == "forged" else 202
@@ -51,7 +55,7 @@ def made(scenario, seconds=160, rate=50, first=20.0, last=45.0):
             new = (first <= at < last and tenth) or (scenario == "good" and at >= last)
         status, took = expected, 0.02
         release, pod = ("b2", "n1") if new else ("a1", f"o{n % 9}")
-        if new and scenario in ONE_IN and feed == "good" and picked(event, ONE_IN[scenario]):
+        if new and one_in and feed == "good" and picked(event, one_in):
             status = 500
             if scenario == "drops":
                 # Nobody can say whose it was. The front answers 502 itself.
@@ -78,7 +82,8 @@ def verdict(scenario, change=lambda clients, front: None, status=None, gate=GATE
 
 class Right(unittest.TestCase):
     def test_every_release_as_it_has_to_be(self):
-        for scenario, times in {"good": {"last": 110.0}, "errors": {}, "few": {"last": 98.0}, "drops": {}, "refuses": {"last": 38.0}, "slow": {}, "never-ready": {}, "dies": {}}.items():
+        for scenario, times in {"good": {"last": 110.0}, "errors": {}, "few": {"last": 98.0}, "drops": {}, "refuses": {"last": 38.0}, "slow": {}, "never-ready": {}, "dies": {}, "restarted": {}, "interrupted": {"last": 80.0},
+                                "unasked": {"rate": 1, "seconds": 170, "last": 98.0}, "blind": {}}.items():
             with self.subTest(scenario):
                 self.assertEqual(verdict(scenario, **times), [])
 
@@ -92,7 +97,9 @@ class Right(unittest.TestCase):
 
     def test_there_is_a_run_for_each_release_that_can_fail(self):
         from app import KINDS
-        self.assertEqual(set(judge.SCENARIOS) - {"good"}, set(KINDS) - {""})
+        others = {"good", "unasked", "blind", *judge.LIKE}
+        self.assertEqual(set(judge.SCENARIOS) - others, set(KINDS) - {""})
+        self.assertTrue(others < set(judge.SCENARIOS))
 
 
 class Wrong(unittest.TestCase):
@@ -132,6 +139,36 @@ class Wrong(unittest.TestCase):
     def test_a_good_release_that_did_not_pass_every_look_twice(self):
         for gate in ([], looked(), looked(runs=3), looked(runs=2)[1:], [{**row, "phase": "Running"} if row["metric"] == "slow" else row for row in looked(runs=2)]):
             self.refused(verdict("good", last=110.0, status=said("Completed", gate=gate)), "did not pass every look twice")
+
+    def test_a_release_that_nobody_asked_and_that_was_asked(self):
+        self.refused(verdict("unasked", seconds=170, last=98.0), "so it could be measured")
+
+    def test_a_release_that_nobody_asked_and_that_went_back_for_another_reason(self):
+        for gate in ([], looked(), looked("clearly-wrong"), looked("wrong"), GATES["blind"]):
+            self.refused(verdict("unasked", rate=1, seconds=170, last=98.0, status=said("Abort", gate=gate)), "because too few asked")
+
+    def test_a_release_that_nobody_could_measure_and_that_was_measured(self):
+        for gate in ([], looked(), looked("clearly-wrong"), GATES["unasked"], [*GATES["blind"][:-1], {**GATES["blind"][-1], "phase": "Failed"}]):
+            self.refused(verdict("blind", status=said("Abort", gate=gate)), "because no look could be taken")
+
+    def test_a_well_release_that_had_errors(self):
+        def one(clients, front):
+            clients[3].update(status=502, release="")
+            front[4].update(status="502", upstream="502", release="")
+        self.refused(verdict("blind", one), "clients saw 1 errors")
+
+    def test_the_controller_forgot_that_it_went_back(self):
+        self.refused(verdict("restarted", status=said("Completed", gate=GATES["restarted"])), "and not Abort")
+
+    def test_the_controller_was_not_away(self):
+        self.refused(verdict("interrupted"), "so it went back before the controller was away")
+
+    def test_a_controller_that_came_back_late_and_one_that_looked_too_late(self):
+        both = [{**row, "phase": "Failed" if row["metric"] in ("clearly-wrong", "wrong") else "Successful"} for row in looked()]
+        self.assertEqual(verdict("interrupted", last=110.0, status=said("Abort", gate=both)), [])
+        # The long look alone also fails when there was too little to look at.
+        self.refused(verdict("interrupted", last=110.0, status=said("Abort", gate=looked("wrong"))), "it was stopped by ['wrong']")
+        self.refused(verdict("errors", status=said("Abort", gate=both)), "it was stopped by ['clearly-wrong', 'wrong']")
 
     def test_nobody_asked_the_controller(self):
         for status in ({}, [], {"release": answered([])}, answered([]), None):

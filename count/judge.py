@@ -16,14 +16,22 @@ sys.path.insert(0, str(ROOT / "count"))
 from app import ONE_IN, picked  # noqa: E402
 from count import read  # noqa: E402
 
-GOOD, BAD, NEVER_ANSWERS = "good", "bad", "bad, and never answers"
-SCENARIOS = {"good": GOOD, "errors": BAD, "few": BAD, "drops": BAD, "refuses": BAD, "slow": BAD, "never-ready": NEVER_ANSWERS, "dies": NEVER_ANSWERS}
+GOOD, BAD, NEVER_ANSWERS, UNMEASURED = "good", "bad", "bad, and never answers", "good, and cannot be measured"
+SCENARIOS = {"good": GOOD, "errors": BAD, "few": BAD, "drops": BAD, "refuses": BAD, "slow": BAD, "never-ready": NEVER_ANSWERS, "dies": NEVER_ANSWERS,
+             "unasked": UNMEASURED, "blind": UNMEASURED, "restarted": BAD, "interrupted": BAD}
+# What is like another one, apart from what happens to the cluster meanwhile.
+LIKE = {"restarted": "errors", "interrupted": "errors"}
 # 1 pod of 10 should get a tenth. Far from it means that the clients, the front or the cluster do not share as we think.
 SHARE = (4.0, 20.0)
 # How many requests in 100 may leave late. More, and the clients could not keep up, so the release got fewer than planned.
 LATE = 1
 # Which look has to stop it. A release that goes back because nothing could be measured was stopped by none of these.
-WHY = {"errors": {"clearly-wrong"}, "refuses": {"clearly-wrong"}, "slow": {"clearly-slow"}, "drops": {"unanswered"}, "few": {"clearly-wrong", "wrong"}}
+WHY = {"errors": {"clearly-wrong"}, "refuses": {"clearly-wrong"}, "slow": {"clearly-slow"}, "drops": {"unanswered"}, "few": {"clearly-wrong", "wrong"},
+       "restarted": {"clearly-wrong"}, "interrupted": {"clearly-wrong"}}
+# When the controller comes back late, the long look is due as well, and may stop it too.
+ALSO = {"interrupted": {"wrong"}}
+# So many seconds the controller is away, and nobody else can take the release back.
+AWAY = 30
 LOOKS = {"clearly-wrong", "clearly-slow", "unanswered", "wrong", "slow"}
 # How the controller's metric calls it. Its status field has other names for the same: Healthy and Degraded.
 DONE, ROLLED_BACK = "Completed", "Abort"
@@ -83,9 +91,9 @@ def judge(scenario, counted, client_lines, status, gate):
     if at_the_end != [new if kind == GOOD else old]:
         wrong.append(f"at the end the answers came from {at_the_end}")
     # The early look needs fewer requests, and a bad release should not get more than it takes.
-    if reached < gate["at_least" if kind == GOOD else "early_at_least"]:
+    if reached < gate["at_least" if kind == GOOD else "early_at_least"] and scenario != "unasked":
         wrong.append(f"only {reached} requests reached the new release, so nothing was tried")
-    if not SHARE[0] <= share <= SHARE[1]:
+    if not SHARE[0] <= share <= SHARE[1] and scenario != "unasked":
         wrong.append(f"the new release got {share}% of the requests in its first minute, which is not 1 pod of 10")
     results = looks(status["gate"], new)
     if kind == GOOD:
@@ -97,18 +105,39 @@ def judge(scenario, counted, client_lines, status, gate):
         if len(runs) != 2 or passed != {(run, look) for run in runs for look in LOOKS}:
             wrong.append(f"it did not pass every look twice: {results}")
         return wrong
+    if kind == UNMEASURED:
+        return wrong + was_it_unmeasured(scenario, errors, reached, results, gate)
     stopped = {look for _, look, phase in results if phase in ("Failed", "Error")}
-    if not stopped or not stopped <= WHY[scenario]:
+    if not stopped & WHY[scenario] or not stopped <= WHY[scenario] | ALSO.get(scenario, set()):
         wrong.append(f"it was stopped by {sorted(stopped) or 'no look'} and not by {sorted(WHY[scenario])}: {results}")
     if errors > gate["seen_errors"]:
         wrong.append(f"clients saw {errors} errors, and {gate['seen_errors']} are acceptable")
     if took > gate["rolled_back_seconds"]:
         wrong.append(f"it answered for {took} seconds, and {gate['rolled_back_seconds']} are acceptable")
+    if scenario == "interrupted" and took < AWAY:
+        wrong.append(f"it answered for {took} seconds only, so it went back before the controller was away")
     return wrong + was_it_bad(scenario, sent, counted, new)
+
+
+def was_it_unmeasured(scenario, errors, reached, results, gate):
+    """It was well, and went back nevertheless, because nobody could say so."""
+    wrong = [f"clients saw {errors} errors"] if errors else []
+    failed = {look for _, look, phase in results if phase == "Failed"}
+    broken = {look for _, look, phase in results if phase == "Error"}
+    if scenario == "unasked":
+        if reached >= gate["at_least"]:
+            wrong.append(f"{reached} requests reached it, so it could be measured")
+        # Both long looks found too few requests, and the early ones said nothing.
+        if failed != {"wrong", "slow"} or broken:
+            wrong.append(f"it should go back because too few asked: {results}")
+    elif failed or not broken:
+        wrong.append(f"it should go back because no look could be taken: {results}")
+    return wrong
 
 
 def was_it_bad(scenario, sent, counted, new):
     """A release that was not as bad as planned proves nothing."""
+    scenario = LIKE.get(scenario, scenario)
     its_answers = [line for line in sent if line.get("release") == new]
     good = [line for line in its_answers if line["feed"] == "good"]
     if scenario == "drops":

@@ -58,10 +58,9 @@ spec:
         && variables.pod.containers[0].env[1].all(k, k in ["name", "value"])
     - message: it may only set what is known
       expression: >-
-        variables.pod.containers[0].env[0].value in ["one", "good", "errors", "few", "drops", "refuses", "slow", "never-ready", "dies"]
-        && (!has(variables.pod.containers[0].env[1].value) || variables.pod.containers[0].env[1].value == ""
-        || (variables.pod.containers[0].env[1].value == variables.pod.containers[0].env[0].value
-        && !(variables.pod.containers[0].env[1].value in ["one", "good"])))
+        variables.pod.containers[0].env[0].value + ":" + (has(variables.pod.containers[0].env[1].value) ? variables.pod.containers[0].env[1].value : "")
+        in ["one:", "good:", "errors:errors", "few:few", "drops:drops", "refuses:refuses", "slow:slow", "never-ready:never-ready", "dies:dies",
+        "unasked:", "blind:", "restarted:errors", "interrupted:errors"]
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

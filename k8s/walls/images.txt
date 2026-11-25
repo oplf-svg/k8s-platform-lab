@@ -1,0 +1,5 @@
+# What may run where the label images=known is. Each line exactly as a pod has to write it, with its fingerprint.
+docker.io/library/python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
+docker.io/library/nginx:1.30.6@sha256:42c68eab6f7e22611786a9fe1d1c019e275c50185bd54b8f75dc2b9184322703
+docker.io/prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+quay.io/argoproj/argo-rollouts@sha256:2a395642ea411ae7b09274a560c3934b16134dfe36f5ffaaa6054c8a21a2eecf
