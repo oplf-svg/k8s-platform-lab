@@ -14,7 +14,7 @@ lists=(
   "unasked blind"
   "restarted interrupted"
 )
-repeat="${1:-1}"
+repeat="${1:-20}"
 [[ "$repeat" =~ ^[1-9][0-9]?$ ]] || { echo "How many times? Not $repeat." >&2; exit 2; }
 
 words=()
