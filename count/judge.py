@@ -32,6 +32,9 @@ WHY = {"errors": {"clearly-wrong"}, "refuses": {"clearly-wrong"}, "slow": {"clea
 ALSO = {"interrupted": {"wrong"}}
 # So many seconds the controller is away, and nobody else can take the release back.
 AWAY = 30
+# These are not stopped by a look that needs so many of their own answers: hardly anybody asks the first one, and the second one is
+# stopped by what nobody answered, among all requests. That can be sooner.
+FEWER = {"unasked", "drops"}
 LOOKS = {"clearly-wrong", "clearly-slow", "unanswered", "wrong", "slow"}
 # How the controller's metric calls it. Its status field has other names for the same: Healthy and Degraded.
 DONE, ROLLED_BACK = "Completed", "Abort"
@@ -91,7 +94,7 @@ def judge(scenario, counted, client_lines, status, gate):
     if at_the_end != [new if kind == GOOD else old]:
         wrong.append(f"at the end the answers came from {at_the_end}")
     # The early look needs fewer requests, and a bad release should not get more than it takes.
-    if reached < gate["at_least" if kind == GOOD else "early_at_least"] and scenario != "unasked":
+    if reached < gate["at_least" if kind == GOOD else "early_at_least"] and scenario not in FEWER:
         wrong.append(f"only {reached} requests reached the new release, so nothing was tried")
     if not SHARE[0] <= share <= SHARE[1] and scenario != "unasked":
         wrong.append(f"the new release got {share}% of the requests in its first minute, which is not 1 pod of 10")

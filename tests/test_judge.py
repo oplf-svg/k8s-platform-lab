@@ -160,6 +160,12 @@ class Wrong(unittest.TestCase):
     def test_the_controller_forgot_that_it_went_back(self):
         self.refused(verdict("restarted", status=said("Completed", gate=GATES["restarted"])), "and not Abort")
 
+    def test_a_release_that_was_stopped_before_it_had_answered_enough(self):
+        # Seen on a cluster: 38 answers and 12 dropped, and stopped after 8 seconds by what nobody answered.
+        self.assertEqual(verdict("drops", last=28.0), [])
+        for scenario in ("errors", "refuses", "slow"):
+            self.refused(verdict(scenario, last=28.0), "so nothing was tried")
+
     def test_the_controller_was_not_away(self):
         self.refused(verdict("interrupted"), "so it went back before the controller was away")
 
