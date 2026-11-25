@@ -23,7 +23,7 @@ stands beside what was calculated before it.
 | [The front](front/nginx.conf) | Writes one line for each answer. It repeats nothing and hides nothing. [Beside it](front/tally.py) the lines become numbers |
 | [Counted from outside](count/count.py) | Compares both lists, request by request. Anything that is not explained ends the run |
 | [The judge](count/judge.py) | Says whether the run was what the contract asks for. What the controller says about itself is only one part |
-| [Many runs](count/many.py) | One run shows that it works and not how often. Judges many again from their lists: the same files, each at the first try |
+| [Many runs](count/many.py) | One run shows that it works and not how often. [A workflow](.github/workflows/often.yml) that is started by hand tries every release twenty times on main. Then all of them are judged again from their lists: the same files, each at the first try |
 | [The walker](docs/walker.md) | Walks through the merged list of releases inside of the cluster. What it cannot do is tried, as the walker, in every pull request |
 | [The two walls](docs/walls.md) | Only images from a list, and only connections that are named. What they have to refuse is tried in every pull request |
 | [Tests that can fail](tests/wrong.py) | More than 100 mistakes that are easy to make, one at a time. The tests have to notice each of them |

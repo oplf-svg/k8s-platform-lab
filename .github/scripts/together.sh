@@ -3,4 +3,5 @@
 # each release had to be tried.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-python3 count/many.py build/all "${1:-1}" "$(git rev-parse 'HEAD^{tree}')" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+tree="$(git rev-parse 'HEAD^{tree}')"
+python3 count/many.py build/all "${1-1}" "$tree" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
