@@ -19,7 +19,7 @@ IMAGES, KNOWN, NETWORK, WALLS = "k8s/walls/images.yaml", "k8s/walls/images.txt",
 WALKER, RIGHT, POLICY = "k8s/walk/walker.py", "k8s/walk/walker.yaml", "k8s/walk/policy.yaml"
 LIST, RELEASES, CANNOT, PARTS = ".github/scripts/list.sh", ".github/scripts/releases.sh", ".github/scripts/cannot.sh", ".github/parts.env"
 MANY, BREAK, JOB = "count/many.py", ".github/scripts/break.sh", ".github/scripts/job.sh"
-RECORD, HOLD = "count/record.py", ".github/scripts/tests.sh"
+RECORD, HOLD, PLACES = "count/record.py", ".github/scripts/tests.sh", ".github/scripts/places.py"
 
 # These measure time, so nothing else may run beside them.
 ALONE = {"chain"}
@@ -214,6 +214,18 @@ MISTAKES = [
     ("a container before the first is not looked at", IMAGES, "object.spec.initContainers.map(c, c.image)", "[]", "files"),
     ("a container that joins is not looked at", IMAGES, "resources: [pods, pods/ephemeralcontainers]", "resources: [pods]", "files"),
     ("a pod that runs is not looked at", IMAGES, "operations: [CREATE, UPDATE]", "operations: [CREATE]", "files"),
+    ("a volume is not looked at", IMAGES, "        + (has(object.spec.volumes) ? object.spec.volumes.filter(v, has(v.image)).map(v, v.image.reference) : [])\n", "", "files"),
+    ("an image as a volume is not tried", WALLS, 'refused "not on the list" "another image as a volume"', 'true "not on the list" "another image as a volume"', "files"),
+    ("the cluster is not asked where an image can stand", WALLS, "kube get --raw /openapi/v3/api/v1 | python3 .github/scripts/places.py\n", "", "files"),
+    ("one place for an image is taken as looked at", PLACES, 'LOOKED_AT = {"containers[].image", ', 'LOOKED_AT = {"containers[].image", "volumes[].csi.image", ', "files places"),
+    ("another place for an image is nothing", PLACES, "    if strange or gone:", "    if gone:", "places"),
+    ("a place for an image that is gone is nothing", PLACES, "    if strange or gone:", "    if strange:", "places"),
+    ("only what is called image is one", PLACES, 'WORDS = ("image", "artifact", "oci")', 'WORDS = ("image",)', "places"),
+    ("a word with a large letter is none", PLACES, "any(word in path.lower() for word in WORDS)", "any(word in path for word in WORDS)", "places"),
+    ("what is made of parts is not looked into", PLACES, 'node.get("allOf", [])', "[]", "places"),
+    ("a list is not looked into", PLACES, '        inside.append((node["items"], f"{path}[]"))', "        pass", "places"),
+    ("names with values are not looked into", PLACES, '        inside.append((node["additionalProperties"], f"{path}{{}}"))', "        pass", "places"),
+    ("what holds itself is looked into for ever", PLACES, "    if name and name not in above:", "    if name:", "places"),
     ("an image too many on the list", KNOWN, "quay.io/argoproj", "docker.io/library/other@sha256:00\nquay.io/argoproj", "files"),
     ("an image is not on the list", KNOWN, "docker.io/prom/prometheus", "# docker.io/prom/prometheus", "files"),
     ("one place has no label", "k8s/base/namespace.yaml", "    images: known\n", "", "files"),

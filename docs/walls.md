@@ -4,6 +4,11 @@
 [a list](../k8s/walls/images.txt), each with its fingerprint and exactly as it is written there. The list is changed by a merge.
 Without the list, or when it cannot be looked at, nothing starts.
 
+An image can stand in four places of a pod: a container, one before it, one that joins later and, since Kubernetes 1.35, a volume.
+**This wall did not look at volumes until 25 November 2026.** That was found by reading, and not by a try. So the cluster is now
+[asked how it describes a pod](../.github/scripts/places.py), and a place that nobody looks at is an error. Asked about the newest
+source of Kubernetes on that day, it names the next one: a seccomp profile out of a registry.
+
 **Connections.** Nothing may talk to anything that is [not named](../k8s/walls/network.yaml).
 
 [All of this is tried](../.github/scripts/walls.sh) in every pull request. Each connection is tried first without the wall and has
@@ -18,6 +23,8 @@ to be open, because a way that was never open proves nothing when it is closed.
 | another image before the first one | refused |
 | another image in a pod that runs | refused |
 | another image that joins a pod that runs | refused |
+| an image from the list as a volume | let through |
+| another image as a volume | refused |
 | an image from the list, when there is no list | refused |
 | an image from the list, when the list is there again | let through |
 | the program to Prometheus | closed |
