@@ -4,7 +4,8 @@ kind: Namespace
 metadata:
   name: walls
 ---
-# Kubernetes itself looks at each pod. Without the list, or when it cannot look, nothing starts.
+# Kubernetes itself looks at each pod, and at every place in which an image can stand (.github/scripts/places.py). Without the list, or
+# when it cannot look, nothing starts.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -28,6 +29,7 @@ spec:
         object.spec.containers.map(c, c.image)
         + (has(object.spec.initContainers) ? object.spec.initContainers.map(c, c.image) : [])
         + (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers.map(c, c.image) : [])
+        + (has(object.spec.volumes) ? object.spec.volumes.filter(v, has(v.image)).map(v, v.image.reference) : [])
   validations:
     - expression: variables.asked.all(image, image in variables.known)
       messageExpression: '"not on the list: " + variables.asked.filter(image, !(image in variables.known)).join(", ")'

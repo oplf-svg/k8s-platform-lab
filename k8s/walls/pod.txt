@@ -1,0 +1,111 @@
+# Every field that a pod can have in Kubernetes 1.35, kind by kind, as the cluster itself describes it. Each of them was looked at. One that
+# the cluster has and that does not stand here is an error: .github/scripts/places.py.
+AWSElasticBlockStoreVolumeSource: fsType partition readOnly volumeID
+Affinity: nodeAffinity podAffinity podAntiAffinity
+AppArmorProfile: localhostProfile type
+AzureDiskVolumeSource: cachingMode diskName diskURI fsType kind readOnly
+AzureFileVolumeSource: readOnly secretName shareName
+CSIVolumeSource: driver fsType nodePublishSecretRef readOnly volumeAttributes
+Capabilities: add drop
+CephFSVolumeSource: monitors path readOnly secretFile secretRef user
+CinderVolumeSource: fsType readOnly secretRef volumeID
+ClusterTrustBundleProjection: labelSelector name optional path signerName
+ConfigMapEnvSource: name optional
+ConfigMapKeySelector: key name optional
+ConfigMapProjection: items name optional
+ConfigMapVolumeSource: defaultMode items name optional
+Container: args command env envFrom image imagePullPolicy lifecycle livenessProbe name ports readinessProbe resizePolicy resources restartPolicy restartPolicyRules securityContext startupProbe stdin stdinOnce terminationMessagePath terminationMessagePolicy tty volumeDevices volumeMounts workingDir
+ContainerPort: containerPort hostIP hostPort name protocol
+ContainerResizePolicy: resourceName restartPolicy
+ContainerRestartRule: action exitCodes
+ContainerRestartRuleOnExitCodes: operator values
+DownwardAPIProjection: items
+DownwardAPIVolumeFile: fieldRef mode path resourceFieldRef
+DownwardAPIVolumeSource: defaultMode items
+EmptyDirVolumeSource: medium sizeLimit
+EnvFromSource: configMapRef prefix secretRef
+EnvVar: name value valueFrom
+EnvVarSource: configMapKeyRef fieldRef fileKeyRef resourceFieldRef secretKeyRef
+EphemeralContainer: args command env envFrom image imagePullPolicy lifecycle livenessProbe name ports readinessProbe resizePolicy resources restartPolicy restartPolicyRules securityContext startupProbe stdin stdinOnce targetContainerName terminationMessagePath terminationMessagePolicy tty volumeDevices volumeMounts workingDir
+EphemeralVolumeSource: volumeClaimTemplate
+ExecAction: command
+FCVolumeSource: fsType lun readOnly targetWWNs wwids
+FileKeySelector: key optional path volumeName
+FlexVolumeSource: driver fsType options readOnly secretRef
+FlockerVolumeSource: datasetName datasetUUID
+GCEPersistentDiskVolumeSource: fsType partition pdName readOnly
+GRPCAction: port service
+GitRepoVolumeSource: directory repository revision
+GlusterfsVolumeSource: endpoints path readOnly
+HTTPGetAction: host httpHeaders path port scheme
+HTTPHeader: name value
+HostAlias: hostnames ip
+HostPathVolumeSource: path type
+ISCSIVolumeSource: chapAuthDiscovery chapAuthSession fsType initiatorName iqn iscsiInterface lun portals readOnly secretRef targetPortal
+ImageVolumeSource: pullPolicy reference
+KeyToPath: key mode path
+LabelSelector: matchExpressions matchLabels
+LabelSelectorRequirement: key operator values
+Lifecycle: postStart preStop stopSignal
+LifecycleHandler: exec httpGet sleep tcpSocket
+LocalObjectReference: name
+ManagedFieldsEntry: apiVersion fieldsType fieldsV1 manager operation subresource time
+NFSVolumeSource: path readOnly server
+NodeAffinity: preferredDuringSchedulingIgnoredDuringExecution requiredDuringSchedulingIgnoredDuringExecution
+NodeSelector: nodeSelectorTerms
+NodeSelectorRequirement: key operator values
+NodeSelectorTerm: matchExpressions matchFields
+ObjectFieldSelector: apiVersion fieldPath
+ObjectMeta: annotations creationTimestamp deletionGracePeriodSeconds deletionTimestamp finalizers generateName generation labels managedFields name namespace ownerReferences resourceVersion selfLink uid
+OwnerReference: apiVersion blockOwnerDeletion controller kind name uid
+PersistentVolumeClaimSpec: accessModes dataSource dataSourceRef resources selector storageClassName volumeAttributesClassName volumeMode volumeName
+PersistentVolumeClaimTemplate: metadata spec
+PersistentVolumeClaimVolumeSource: claimName readOnly
+PhotonPersistentDiskVolumeSource: fsType pdID
+PodAffinity: preferredDuringSchedulingIgnoredDuringExecution requiredDuringSchedulingIgnoredDuringExecution
+PodAffinityTerm: labelSelector matchLabelKeys mismatchLabelKeys namespaceSelector namespaces topologyKey
+PodAntiAffinity: preferredDuringSchedulingIgnoredDuringExecution requiredDuringSchedulingIgnoredDuringExecution
+PodCertificateProjection: certificateChainPath credentialBundlePath keyPath keyType maxExpirationSeconds signerName userAnnotations
+PodDNSConfig: nameservers options searches
+PodDNSConfigOption: name value
+PodOS: name
+PodReadinessGate: conditionType
+PodResourceClaim: name resourceClaimName resourceClaimTemplateName
+PodSchedulingGate: name
+PodSecurityContext: appArmorProfile fsGroup fsGroupChangePolicy runAsGroup runAsNonRoot runAsUser seLinuxChangePolicy seLinuxOptions seccompProfile supplementalGroups supplementalGroupsPolicy sysctls windowsOptions
+PodSpec: activeDeadlineSeconds affinity automountServiceAccountToken containers dnsConfig dnsPolicy enableServiceLinks ephemeralContainers hostAliases hostIPC hostNetwork hostPID hostUsers hostname hostnameOverride imagePullSecrets initContainers nodeName nodeSelector os overhead preemptionPolicy priority priorityClassName readinessGates resourceClaims resources restartPolicy runtimeClassName schedulerName schedulingGates securityContext serviceAccount serviceAccountName setHostnameAsFQDN shareProcessNamespace subdomain terminationGracePeriodSeconds tolerations topologySpreadConstraints volumes workloadRef
+PortworxVolumeSource: fsType readOnly volumeID
+PreferredSchedulingTerm: preference weight
+Probe: exec failureThreshold grpc httpGet initialDelaySeconds periodSeconds successThreshold tcpSocket terminationGracePeriodSeconds timeoutSeconds
+ProjectedVolumeSource: defaultMode sources
+QuobyteVolumeSource: group readOnly registry tenant user volume
+RBDVolumeSource: fsType image keyring monitors pool readOnly secretRef user
+ResourceClaim: name request
+ResourceFieldSelector: containerName divisor resource
+ResourceRequirements: claims limits requests
+SELinuxOptions: level role type user
+ScaleIOVolumeSource: fsType gateway protectionDomain readOnly secretRef sslEnabled storageMode storagePool system volumeName
+SeccompProfile: localhostProfile type
+SecretEnvSource: name optional
+SecretKeySelector: key name optional
+SecretProjection: items name optional
+SecretVolumeSource: defaultMode items optional secretName
+SecurityContext: allowPrivilegeEscalation appArmorProfile capabilities privileged procMount readOnlyRootFilesystem runAsGroup runAsNonRoot runAsUser seLinuxOptions seccompProfile windowsOptions
+ServiceAccountTokenProjection: audience expirationSeconds path
+SleepAction: seconds
+StorageOSVolumeSource: fsType readOnly secretRef volumeName volumeNamespace
+Sysctl: name value
+TCPSocketAction: host port
+Toleration: effect key operator tolerationSeconds value
+TopologySpreadConstraint: labelSelector matchLabelKeys maxSkew minDomains nodeAffinityPolicy nodeTaintsPolicy topologyKey whenUnsatisfiable
+TypedLocalObjectReference: apiGroup kind name
+TypedObjectReference: apiGroup kind name namespace
+Volume: awsElasticBlockStore azureDisk azureFile cephfs cinder configMap csi downwardAPI emptyDir ephemeral fc flexVolume flocker gcePersistentDisk gitRepo glusterfs hostPath image iscsi name nfs persistentVolumeClaim photonPersistentDisk portworxVolume projected quobyte rbd scaleIO secret storageos vsphereVolume
+VolumeDevice: devicePath name
+VolumeMount: mountPath mountPropagation name readOnly recursiveReadOnly subPath subPathExpr
+VolumeProjection: clusterTrustBundle configMap downwardAPI podCertificate secret serviceAccountToken
+VolumeResourceRequirements: limits requests
+VsphereVirtualDiskVolumeSource: fsType storagePolicyID storagePolicyName volumePath
+WeightedPodAffinityTerm: podAffinityTerm weight
+WindowsSecurityContextOptions: gmsaCredentialSpec gmsaCredentialSpecName hostProcess runAsUserName
+WorkloadReference: name podGroup podGroupReplicaKey

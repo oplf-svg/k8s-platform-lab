@@ -4,6 +4,12 @@
 [a list](../k8s/walls/images.txt), each with its fingerprint and exactly as it is written there. The list is changed by a merge.
 Without the list, or when it cannot be looked at, nothing starts.
 
+An image can stand in four places of a pod: a container, one before it, one that joins later and, since Kubernetes 1.35, a volume.
+**This wall did not look at volumes until 25 November 2026.** That was found by reading, and not by a try. So the cluster is now
+[asked how it describes a pod](../.github/scripts/places.py). It has [516 fields](../k8s/walls/pod.txt) in Kubernetes 1.35, and each was
+looked at. A field that does not stand there is an error, whatever it is called. Kubernetes 1.36 has two such fields and 1.37 has 16
+more. The newest source of that day has ten more, and one of them is the next place: a seccomp profile out of a registry.
+
 **Connections.** Nothing may talk to anything that is [not named](../k8s/walls/network.yaml).
 
 [All of this is tried](../.github/scripts/walls.sh) in every pull request. Each connection is tried first without the wall and has
@@ -18,6 +24,8 @@ to be open, because a way that was never open proves nothing when it is closed.
 | another image before the first one | refused |
 | another image in a pod that runs | refused |
 | another image that joins a pod that runs | refused |
+| an image from the list as a volume | let through |
+| another image as a volume | refused |
 | an image from the list, when there is no list | refused |
 | an image from the list, when the list is there again | let through |
 | the program to Prometheus | closed |
@@ -37,6 +45,8 @@ to be open, because a way that was never open proves nothing when it is closed.
 
 - **Whoever can take the label off the namespace, or change the list in the cluster, is past the first wall.** Nothing of ours has
   that right.
+- **What hides in the value of a field is not seen.** A driver of a volume could take an image by a value of its own. There is no such
+  driver in this cluster, and this is not tried.
 - **An image on the list can be started with other words.** The list says what runs, and not what it is told to do.
 - **An attestation is not looked at here.** The images on the list are public ones, taken as they are and pinned by their
   fingerprint. Nobody checked who made them. What looks at an attestation when a pod starts comes with the first image of our own.

@@ -19,7 +19,7 @@ IMAGES, KNOWN, NETWORK, WALLS = "k8s/walls/images.yaml", "k8s/walls/images.txt",
 WALKER, RIGHT, POLICY = "k8s/walk/walker.py", "k8s/walk/walker.yaml", "k8s/walk/policy.yaml"
 LIST, RELEASES, CANNOT, PARTS = ".github/scripts/list.sh", ".github/scripts/releases.sh", ".github/scripts/cannot.sh", ".github/parts.env"
 MANY, BREAK, JOB = "count/many.py", ".github/scripts/break.sh", ".github/scripts/job.sh"
-RECORD, HOLD = "count/record.py", ".github/scripts/tests.sh"
+RECORD, HOLD, PLACES = "count/record.py", ".github/scripts/tests.sh", ".github/scripts/places.py"
 
 # These measure time, so nothing else may run beside them.
 ALONE = {"chain"}
@@ -214,6 +214,23 @@ MISTAKES = [
     ("a container before the first is not looked at", IMAGES, "object.spec.initContainers.map(c, c.image)", "[]", "files"),
     ("a container that joins is not looked at", IMAGES, "resources: [pods, pods/ephemeralcontainers]", "resources: [pods]", "files"),
     ("a pod that runs is not looked at", IMAGES, "operations: [CREATE, UPDATE]", "operations: [CREATE]", "files"),
+    ("a volume is not looked at", IMAGES, "        + (has(object.spec.volumes) ? object.spec.volumes.filter(v, has(v.image)).map(v, v.image.reference) : [])\n", "", "files"),
+    ("an image as a volume is not tried", WALLS, 'refused "not on the list" "another image as a volume"', 'true "not on the list" "another image as a volume"', "files"),
+    ("the cluster is not asked where an image can stand", WALLS, "kube get --raw /openapi/v3/api/v1 | python3 .github/scripts/places.py\n", "", "files"),
+    ("one place for an image is taken as looked at", PLACES, 'LOOKED_AT = {"containers[].image", ', 'LOOKED_AT = {"containers[].image", "volumes[].csi.image", ', "files places"),
+    ("a new field is nothing", PLACES, "sorted(has - knows)]", "sorted(has - has)]", "places"),
+    ("only a new field with a known name is seen", PLACES, "sorted(has - knows)]", 'sorted(has - knows) if "image" in field.lower()]', "places"),
+    ("a field that is gone is nothing", PLACES, "sorted(knows - has)]", "sorted(has - has)]", "places"),
+    ("a new way to an image is nothing", PLACES, "sorted(leads - LOOKED_AT)]", "sorted(has - has)]", "places"),
+    ("a way to an image that is gone is nothing", PLACES, "sorted(LOOKED_AT - leads)]", "sorted(has - has)]", "places"),
+    ("what is wrong is only said", PLACES, "        return 1\n", "        return 0\n", "places"),
+    ("what is made of parts is not looked into", PLACES, "        for value in node.values():\n            yield from pointed_to(value)\n", "        pass\n", "places"),
+    ("a list is not looked into", PLACES, "        for value in node:\n            yield from pointed_to(value)\n", "        pass\n", "places"),
+    ("what holds itself is looked into for ever", PLACES, "set(pointed_to(node)) - above - {name}", "set(pointed_to(node))", "places"),
+    ("a kind without fields is the end of a way", PLACES, '.get("properties", {"": schemas[name]})', '.get("properties", {})', "places"),
+    ("two kinds with one name are one", PLACES, "        if short(name) in kinds:\n", "        if False:\n", "places"),
+    ("one field is taken out of the list", "k8s/walls/pod.txt", " nodeName ", " ", "places"),
+    ("one field is put into the list", "k8s/walls/pod.txt", "ImageVolumeSource: pullPolicy", "ImageVolumeSource: bundle pullPolicy", "places"),
     ("an image too many on the list", KNOWN, "quay.io/argoproj", "docker.io/library/other@sha256:00\nquay.io/argoproj", "files"),
     ("an image is not on the list", KNOWN, "docker.io/prom/prometheus", "# docker.io/prom/prometheus", "files"),
     ("one place has no label", "k8s/base/namespace.yaml", "    images: known\n", "", "files"),

@@ -13,14 +13,15 @@ other="docker.io/library/other:1@sha256:$(printf '0%.0s' $(seq 64))"
 tried=0
 
 # ---- images. Nothing is started: the cluster only says whether it would.
-pod() { # image, and the image of a container before it
-  jq --null-input --arg image "$1" --arg before "${2:-}" '
+pod() { # image, the image of a container before it, and the image of a volume
+  jq --null-input --arg image "$1" --arg before "${2:-}" --arg volume "${3:-}" '
     {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}} as $little
     | {apiVersion: "v1", kind: "Pod", metadata: {name: "tried", namespace: "shop"},
        spec: ({restartPolicy: "Never", automountServiceAccountToken: false,
                securityContext: {runAsNonRoot: true, runAsUser: 10009, seccompProfile: {type: "RuntimeDefault"}},
                containers: [{name: "c", image: $image, securityContext: $little}]}
-              + (if $before == "" then {} else {initContainers: [{name: "b", image: $before, securityContext: $little}]} end))}'
+              + (if $before == "" then {} else {initContainers: [{name: "b", image: $before, securityContext: $little}]} end)
+              + (if $volume == "" then {} else {volumes: [{name: "v", image: {reference: $volume}}]} end))}'
 }
 start() { pod "$@" | kube create --dry-run=server --filename -; }
 change_image() { kube patch "$(name_of front)" --dry-run=server --type json --patch "[{\"op\":\"replace\",\"path\":\"/spec/containers/0/image\",\"value\":\"$1\"}]"; }
@@ -50,6 +51,8 @@ started() { # what is tried, the command
   tried=$((tried + 1))
   echo "let through: $what"
 }
+# Where an image can stand changes with each Kubernetes, so the cluster is asked how it describes a pod.
+kube get --raw /openapi/v3/api/v1 | python3 .github/scripts/places.py
 started "an image from the list" start "$known"
 refused "not on the list" "an image that is not on the list" start "$other"
 refused "not on the list" "an image from the list without its fingerprint" start "${known%@*}"
@@ -57,6 +60,8 @@ refused "not on the list" "an image from the list with another fingerprint" star
 refused "not on the list" "another image before the first one" start "$known" "$other"
 refused "not on the list" "another image in a pod that runs" change_image "$other"
 refused "not on the list" "another image that joins a pod that runs" join_pod "$other"
+started "an image from the list as a volume" start "$known" "" "$known"
+refused "not on the list" "another image as a volume" start "$known" "" "$other"
 kube --namespace walls delete configmap known-images > /dev/null
 sleep 5
 refused "no params found" "an image from the list, when there is no list" start "$known"

@@ -5,9 +5,13 @@ import json
 import pathlib
 import re
 import subprocess
+import sys
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / ".github" / "scripts"))
+import places  # noqa: E402
+
 K8S = ROOT / "k8s"
 GATE = json.loads((ROOT / "gate.json").read_text())
 CLOUDS = json.loads((K8S / "clouds" / "clouds.json").read_text())
@@ -234,8 +238,16 @@ class Walls(unittest.TestCase):
         for word in ("failurePolicy: Fail\n", "parameterNotFoundAction: Deny\n", "validationActions: [Deny]\n", "resources: [pods, pods/ephemeralcontainers]\n",
                      "operations: [CREATE, UPDATE]\n"):
             self.assertEqual(self.policy.count(word), 1, word)
-        for kind in ("containers", "initContainers", "ephemeralContainers"):
-            self.assertIn(f"object.spec.{kind}.map(c, c.image)", self.policy)
+
+    def test_every_place_for_an_image_is_looked_at(self):
+        for place in places.LOOKED_AT:
+            kind, _, rest = place.partition("[].")
+            looks = {"image": f"object.spec.{kind}.map(c, c.image)", "image.reference": f"object.spec.{kind}.filter(v, has(v.image)).map(v, v.image.reference)"}
+            self.assertEqual(self.policy.count(looks[rest]), 1, place)
+        self.assertEqual(self.policy.count("object.spec.") - 3, len(places.LOOKED_AT))
+        # The cluster is asked, before anything is tried.
+        script = text(".github", "scripts", "walls.sh")
+        self.assertIn("\nkube get --raw /openapi/v3/api/v1 | python3 .github/scripts/places.py\nstarted ", script)
 
     def test_both_places_carry_the_label(self):
         self.assertIn("    images: known\n", text("k8s", "base", "namespace.yaml"))
@@ -262,7 +274,7 @@ class Walls(unittest.TestCase):
         for kind, what in re.findall(r'^(started|refused "[a-z ]+") "([^"]+)"', script, re.MULTILINE):
             tried.append((what, "let through" if kind == "started" else "refused"))
         tried += [(what, wanted) for wanted, what in re.findall(r'^  "(closed|open)\|([^|]+)\|', script, re.MULTILINE)]
-        self.assertGreaterEqual(len(said), 21)
+        self.assertEqual(len(said), 23)
         self.assertEqual(said, tried)
         # Without the wall first, then with it.
         self.assertLess(script.index("try_all without\n"), script.index("try_all with\n"))
