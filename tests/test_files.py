@@ -176,9 +176,9 @@ class Release(unittest.TestCase):
         scenarios = re.search(r"^SCENARIOS = \{(.*?)\}$", text("count", "judge.py"), re.MULTILINE | re.DOTALL)[1]
         once = lists()
         # A pull request asks for one of each. More is only asked for by hand.
-        self.assertIn('run: bash .github/scripts/list.sh >> "$GITHUB_OUTPUT"\n', WORKFLOW.read_text())
+        self.assertIn('run: bash .github/scripts/list.sh >> "$GITHUB_OUTPUT"\n', text(".github", "workflows", "ci.yml"))
         self.assertEqual(lists("1"), once)
-        for nonsense in ("0", "x", "-1", "100", "2; id", "2 3", "02"):
+        for nonsense in ("", "0", "x", "-1", "100", "2; id", "2 3", "02"):
             self.assertEqual(lists(nonsense, code=2), "", nonsense)
         tried = [word for words in once for word in words.split()]
         refused = {"cannot", "walls"}
@@ -336,90 +336,22 @@ class Walker(unittest.TestCase):
             self.assertIn(word, files)
 
 
-WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
-OFTEN = WORKFLOW.with_name("often.yml")
+class Workflows(unittest.TestCase):
+    """Only the owner may change these files. What is checked about them stands in test_workflows.py. Here it only has to be said when
+    one is another one than the one that was looked at, or when there is one more."""
 
+    def test_they_are_the_ones_that_were_looked_at(self):
+        there = {file.name: hashlib.sha256(file.read_bytes()).hexdigest() for file in (ROOT / ".github" / "workflows").iterdir()}
+        self.assertEqual(there, {
+            "ci.yml": "b4aa18b9e7b85e2c85e19fadfe1c42c0234e54ae05bd7cf35872b21d8ab610bb",
+            "often.yml": "90bf910e3bbdaea77eb60a9d35496311ca25b6abc8eff2c1ee6025a3922fa31b"})
 
-@unittest.skipUnless(WORKFLOW.exists(), "the owner pushes the workflow first")
-class Workflow(unittest.TestCase):
-    """Agents may not change the workflow. These are the rules that it has to keep, because its list of clusters comes from a
-    script that a pull request can change. That each release is tried once is looked at above."""
-
-    def setUp(self):
-        self.text = WORKFLOW.read_text()
-        self.jobs = re.findall(r"^  ([a-z-]+):$", self.text.split("\njobs:\n")[1], re.MULTILINE)
-
-    def test_the_words_of_the_list_reach_nothing_but_a_name_and_a_setting(self):
-        self.assertEqual(self.text.count("matrix.words"), 2)
-        self.assertIn("    name: cluster (${{ matrix.words }})\n", self.text)
-        self.assertIn("          WORDS: ${{ matrix.words }}\n", self.text)
-        self.assertIn("run: bash .github/scripts/job.sh $WORDS\n", self.text)
-
-    def test_a_long_list_cannot_take_all_machines(self):
-        self.assertIn("      max-parallel: 5\n", self.text)
-
-    def test_every_job_is_on_the_same_machine_and_has_no_rights_to_give_away(self):
-        self.assertEqual(set(re.findall(r"runs-on: (.*)", self.text)), {"ubuntu-24.04"})
-        self.assertIn("\npermissions: {}\n", self.text)
-        self.assertEqual(set(re.findall(r"^      [a-z-]+: (read|write|none)$", self.text, re.MULTILINE)), {"read"})
-        for word in ("environment:", "container:", "services:", "id-token", "pull_request_target", "workflow_run", "workflow_dispatch"):
-            self.assertNotIn(word, self.text)
-        self.assertEqual(set(re.findall(r"secrets\.([A-Z_]+)", self.text)), {"BLOCKED_TERMS"})
-
-    def test_only_two_actions_of_github_at_a_commit(self):
-        for action in re.findall(r"uses: (.*)", self.text):
-            self.assertRegex(action, r"^actions/(checkout|upload-artifact)@[0-9a-f]{40} # v[\d.]+$")
-
-    def test_the_required_check_waits_for_every_job(self):
-        self.assertEqual(self.jobs[-1], "ci")
-        waits = re.findall(r"needs: \[(.*)\]", self.text.split("\n  ci:\n")[1])[0].split(", ")
-        self.assertEqual(sorted(waits), sorted(self.jobs[:-1]))
-        self.assertIn(f"length == {len(waits)}\n", self.text)
-
-
-@unittest.skipUnless(OFTEN.exists(), "The owner pushes it.")
-class Often(unittest.TestCase):
-    """The same clusters, several times, and then all of them judged together. Started by hand."""
-
-    def setUp(self):
-        self.text = OFTEN.read_text()
-        self.parts = dict(re.findall(r"^  ([a-z-]+):\n((?:    .*\n|\n)+)", self.text.split("\njobs:\n")[1], re.MULTILINE))
-
-    def test_it_is_started_by_hand_and_only_on_what_was_approved(self):
-        self.assertEqual(re.findall(r"^  ([a-z_]+):", self.text.split("\non:\n")[1].split("\npermissions:")[0], re.MULTILINE), ["workflow_dispatch"])
-        self.assertIn("    if: ${{ github.ref == 'refs/heads/main' }}\n", self.parts["list"])
-        self.assertIn("        type: choice\n", self.text)
-
-    def test_it_can_never_stand_in_for_the_required_check(self):
-        self.assertEqual(list(self.parts), ["list", "clusters", "together"])
-        self.assertNotIn("name: ci\n", self.text)
-
-    def test_a_cluster_is_the_same_as_in_a_pull_request(self):
-        def steps(part):
-            return part.split("    steps:\n")[1].strip()
-        there = WORKFLOW.read_text().split("\n  clusters:\n")[1].split("\n\n  ")[0]
-        self.assertEqual(steps(self.parts["clusters"]), steps(there))
-        for same in ("    name: cluster (${{ matrix.words }})\n", "      max-parallel: 5\n", "      fail-fast: false\n", "    timeout-minutes: 30\n"):
-            self.assertIn(same, self.parts["clusters"])
-            self.assertIn(same, there + "\n")
-
-    def test_what_somebody_chose_reaches_nothing_but_a_setting(self):
-        self.assertEqual(set(re.findall(r"^ *(\w+): \$\{\{ inputs\.times \}\}$", self.text, re.MULTILINE)), {"TIMES"})
-        self.assertEqual(self.text.count("inputs."), 2)
-        self.assertIn('run: bash .github/scripts/list.sh "$TIMES" >> "$GITHUB_OUTPUT"\n', self.parts["list"])
-        self.assertIn('run: bash .github/scripts/together.sh "$TIMES"\n', self.parts["together"])
-
-    def test_it_judges_also_when_something_was_red(self):
-        self.assertIn("    needs: [list, clusters]\n    if: ${{ !cancelled() && needs.list.result == 'success' }}\n", self.parts["together"])
-
-    def test_no_rights_and_only_actions_of_github_at_a_commit(self):
-        self.assertIn("\npermissions: {}\n", self.text)
-        self.assertEqual(set(re.findall(r"^      [a-z-]+: (read|write|none)$", self.text, re.MULTILINE)), {"read"})
-        self.assertEqual(set(re.findall(r"runs-on: (.*)", self.text)), {"ubuntu-24.04"})
-        for word in ("environment:", "container:", "services:", "id-token", "secrets.", "pull_request"):
-            self.assertNotIn(word, self.text)
-        for action in re.findall(r"uses: (.*)", self.text):
-            self.assertRegex(action, r"^actions/(checkout|upload-artifact|download-artifact)@[0-9a-f]{40} # v[\d.]+$")
+    def test_a_cluster_of_the_twenty_has_the_same_steps(self):
+        def steps(name):
+            job = re.split(r"(?m)^  \S+:\n", text(".github", "workflows", name).split("\n  clusters:\n")[1])[0]
+            return [line for line in job.split("    steps:\n")[1].splitlines() if line and not line.startswith("  #")]
+        self.assertEqual(steps("often.yml"), steps("ci.yml"))
+        self.assertGreater(len(steps("ci.yml")), 8)
 
 
 class Front(unittest.TestCase):

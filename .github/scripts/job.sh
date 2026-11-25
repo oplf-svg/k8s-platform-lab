@@ -14,6 +14,7 @@ while [ "${1:-}" = cannot ] || [ "${1:-}" = walls ]; do
   shift
 done
 bash .github/scripts/cluster.sh "$@"
-for one in "${tries[@]}"; do bash ".github/scripts/$one.sh"; done
+# Written so that an empty list is one for an old bash too.
+for one in ${tries[@]+"${tries[@]}"}; do bash ".github/scripts/$one.sh"; done
 # Some releases are tried while a part of the cluster is away. Only here, where the cluster is thrown away afterwards.
 BREAK=.github/scripts/break.sh bash .github/scripts/releases.sh "$@"

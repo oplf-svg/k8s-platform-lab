@@ -115,6 +115,23 @@ class Many(Place):
         (place / "few.front.jsonl").write_text("".join(lines[:100]))
         self.assertIn("the numbers cannot be believed", self.result(1)[1])
 
+    def test_what_the_controller_said_cannot_be_read(self):
+        place = [one for one in self.all_of(1) if one.name.endswith("-few")][0]
+        for text in ("", "{", "Abort"):
+            (place / "few.status.json").write_text(text)
+            code, said = self.result(1)
+            self.assertEqual(code, 1)
+            self.assertIn(f"- {place.name}, few: what the controller said cannot be read\n", said)
+
+    def test_no_job_left_anything_behind(self):
+        with contextlib.redirect_stdout(io.StringIO()) as said:
+            code = many.main([str(self.folder / "nowhere"), "1", TREE], env={})
+        self.assertEqual((code, said.getvalue()), (1, "No job left anything behind.\n"))
+        # A folder in which nothing is says what is missing.
+        code, words = self.result(1)
+        self.assertEqual(code, 1)
+        self.assertIn("- few: 0 good runs, and 1 have to be there\n", words)
+
     def test_a_list_is_missing(self):
         place = [one for one in self.all_of(1) if one.name.endswith("-slow")][0]
         (place / "slow.front.jsonl").unlink()

@@ -38,7 +38,10 @@ def look_at(folder, gate):
             clients, bad_clients = read(files["clients.jsonl"])
             front, bad_front = read(files["front.jsonl"])
             counted = compare(clients, front, name, bad_clients + bad_front)
-            wrong = judge(name, counted, clients, json.loads(status.read_text()), gate) if name in SCENARIOS else ["it is not known"]
+            try:
+                wrong = judge(name, counted, clients, json.loads(status.read_text()), gate) if name in SCENARIOS else ["it is not known"]
+            except json.JSONDecodeError:
+                wrong = ["what the controller said cannot be read"]
             first = min((line for line in clients if line.get("release")), key=lambda line: line["at"], default={})
             errors = counted["seen errors"]
             seconds = max((took for release, took in counted["seconds from first to last answer"].items() if release != first.get("release")), default=0.0)
@@ -79,6 +82,9 @@ def put_together(lines, how_many):
 def main(argv, env=os.environ):
     folder, how_many, tree = pathlib.Path(argv[0]), int(argv[1]), argv[2]
     gate = json.loads((ROOT / "gate.json").read_text())
+    if not folder.is_dir():
+        print("No job left anything behind.")
+        return 1
     table, problems = put_together(look_at(folder, gate), how_many)
     problems += other_files(folder, tree)
     if env.get("GITHUB_RUN_ATTEMPT", "1") != "1":

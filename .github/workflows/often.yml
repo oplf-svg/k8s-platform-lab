@@ -1,0 +1,86 @@
+name: often
+
+# One run shows that something works, and not how often. This tries every cluster several times and then judges all of them
+# together, again, from their lists. It is started by hand and only on main, so it is about files that were approved.
+# No job here is called "ci", so a run of this can never stand in for the required check.
+on:
+  workflow_dispatch:
+    inputs:
+      times:
+        description: How many times each
+        required: true
+        type: choice
+        options: ["20", "2"]
+
+permissions: {}
+
+# One after the other. A new one waits and does not end the one that runs. Only one waits: a third takes its place.
+concurrency:
+  group: often
+  cancel-in-progress: false
+
+jobs:
+  list:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      words: ${{ steps.list.outputs.words }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: list
+        run: bash .github/scripts/list.sh "$TIMES" >> "$GITHUB_OUTPUT"
+        env:
+          TIMES: ${{ inputs.times }}
+
+  # The same as in a pull request; tests/test_files.py compares the steps.
+  clusters:
+    name: cluster (${{ matrix.words }})
+    needs: list
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        words: ${{ fromJSON(needs.list.outputs.words) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash .github/scripts/job.sh $WORDS
+        env:
+          WORDS: ${{ matrix.words }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ always() }}
+        with:
+          name: counted ${{ strategy.job-index }}
+          path: build/public
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # Also when a cluster was red: then it says what was wrong.
+  together:
+    needs: [list, clusters]
+    if: ${{ !cancelled() && needs.list.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: counted *
+          path: build/all
+      - run: bash .github/scripts/together.sh "$TIMES"
+        env:
+          TIMES: ${{ inputs.times }}
